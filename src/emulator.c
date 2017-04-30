@@ -251,7 +251,7 @@ const int8_t SYMBOL_SET_LETTERS[] PROGMEM = {
 
 const int8_t SYMBOL_SET_NUMBERS[] PROGMEM = {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-    '.'
+    '.', '-'
 };
 
 const uint8_t SYMBOL_SET_PUNCTUATION[] PROGMEM = {

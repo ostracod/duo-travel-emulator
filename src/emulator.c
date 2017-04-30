@@ -33,9 +33,19 @@
 #define ALLOCATION_PREVIOUS_OFFSET sizeof(int8_t *)
 #define ALLOCATION_NEXT_OFFSET (ALLOCATION_PREVIOUS_OFFSET + sizeof(int8_t *))
 #define ALLOCATION_SIZE_OFFSET (ALLOCATION_NEXT_OFFSET + 2)
-#define ALLOCATION_IS_REACHABLE_OFFSET (ALLOCATION_SIZE_OFFSET + 1)
+#define ALLOCATION_TYPE_OFFSET (ALLOCATION_SIZE_OFFSET + 1)
+#define ALLOCATION_IS_REACHABLE_OFFSET (ALLOCATION_TYPE_OFFSET + 1)
 #define ALLOCATION_HEADER_SIZE ALLOCATION_SIZE_OFFSET
 #define HEAP_START_ADDRESS (memory + sizeof(memory))
+
+#define ALLOCATION_TYPE_STRING_POINTER 1
+#define ALLOCATION_TYPE_STRING 2
+#define ALLOCATION_TYPE_LIST_POINTER 3
+#define ALLOCATION_TYPE_LIST 4
+
+#define VALUE_TYPE_NUMBER 1
+#define VALUE_TYPE_STRING 2
+#define VALUE_TYPE_LIST 3
 
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
@@ -412,6 +422,11 @@ const int8_t SYMBOL_SET_SIZE_LIST[] PROGMEM = {
     sizeof(SYMBOL_SET_VALUE)
 };
 
+typedef struct value {
+    int8_t type;
+    int8_t data[sizeof(int8_t *)];
+} value_t;
+
 WINDOW *window;
 int32_t windowWidth;
 int32_t windowHeight;
@@ -548,7 +563,7 @@ void handleResize() {
     drawDisplayBuffer();
 }
 
-int8_t *allocate(int16_t size) {
+int8_t *allocate(int16_t size, int8_t type) {
     int8_t *tempPreviousAllocation = NULL;
     int8_t *tempNextAllocation = firstAllocation;
     int8_t *output;
@@ -575,6 +590,7 @@ int8_t *allocate(int16_t size) {
     *(int8_t **)(output - ALLOCATION_PREVIOUS_OFFSET) = tempPreviousAllocation;
     *(int8_t **)(output - ALLOCATION_NEXT_OFFSET) = tempNextAllocation;
     *(int16_t *)(output - ALLOCATION_SIZE_OFFSET) = size;
+    *(int8_t *)(output - ALLOCATION_TYPE_OFFSET) = type;
     if (tempPreviousAllocation == NULL) {
         firstAllocation = output;
     } else {
@@ -668,11 +684,11 @@ int main(int argc, const char *argv[]) {
     
     // TEST CODE.
     /*
-    int8_t *tempAllocation1 = allocate(30);
-    int8_t *tempAllocation2 = allocate(30);
-    int8_t *tempAllocation3 = allocate(30);
+    int8_t *tempAllocation1 = allocate(30, 0);
+    int8_t *tempAllocation2 = allocate(30, 0);
+    int8_t *tempAllocation3 = allocate(30, 0);
     deallocate(tempAllocation2);
-    int8_t *tempAllocation4 = allocate(40);
+    int8_t *tempAllocation4 = allocate(40, 0);
     printf("%ld\n", tempAllocation1 - memory);
     printf("%ld\n", tempAllocation2 - memory);
     printf("%ld\n", tempAllocation3 - memory);

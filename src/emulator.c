@@ -12,6 +12,7 @@
 
 #define true 1
 #define false 0
+#define PROGMEM
 
 #define DISPLAY_WIDTH 16
 #define DISPLAY_HEIGHT 2
@@ -34,29 +35,228 @@ int32_t windowWidth;
 int32_t windowHeight;
 int8_t displayBuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 
-void drawBackground() {
-    int32_t tempPosY = 0;
-    while (tempPosY < windowHeight) {
-        int32_t tempPosX = 0;
-        while (tempPosX < windowWidth) {
-            int8_t tempColor;
-            if (tempPosX >= DISPLAY_OFFSET_X && tempPosX < DISPLAY_OFFSET_X + DISPLAY_WIDTH
-                    && tempPosY >= DISPLAY_OFFSET_Y && tempPosY < DISPLAY_OFFSET_Y + DISPLAY_HEIGHT) {
-                tempColor = BLACK_ON_WHITE;
-            } else {
-                tempColor = WHITE_ON_CYAN;
-            }
-            attron(COLOR_PAIR(tempColor));
-            mvaddch(tempPosY, tempPosX, ' ');
-            attroff(COLOR_PAIR(tempColor));
-            tempPosX += 1;
-        }
-        tempPosY += 1;
-    }
-    attron(COLOR_PAIR(WHITE_ON_CYAN));
-    mvprintw(1, 1, "DUO Travel Emulator");
-    attroff(COLOR_PAIR(WHITE_ON_CYAN));
-    refresh();
+const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
+const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
+const int8_t SYMBOL_TEXT_BOOLEAN_XOR[] PROGMEM = "^^";
+const int8_t SYMBOL_TEXT_BITSHIFT_LEFT[] PROGMEM = "<<";
+const int8_t SYMBOL_TEXT_BITSHIFT_RIGHT[] PROGMEM = ">>";
+const int8_t SYMBOL_TEXT_INCREMENT[] PROGMEM = "++";
+const int8_t SYMBOL_TEXT_DECREMENT[] PROGMEM = "--";
+const int8_t SYMBOL_TEXT_EQUAL[] PROGMEM = "==";
+const int8_t SYMBOL_TEXT_NOT_EQUAL[] PROGMEM = "!=";
+const int8_t SYMBOL_TEXT_GREATER_OR_EQUAL[] PROGMEM = ">=";
+const int8_t SYMBOL_TEXT_LESS_OR_EQUAL[] PROGMEM = "<=";
+
+const int8_t SYMBOL_TEXT_ADD_ASSIGN[] PROGMEM = "+=";
+const int8_t SYMBOL_TEXT_SUBTRACT_ASSIGN[] PROGMEM = "-=";
+const int8_t SYMBOL_TEXT_MULTIPLY_ASSIGN[] PROGMEM = "*=";
+const int8_t SYMBOL_TEXT_DIVIDE_ASSIGN[] PROGMEM = "/=";
+const int8_t SYMBOL_TEXT_MODULUS_ASSIGN[] PROGMEM = "%=";
+const int8_t SYMBOL_TEXT_BOOLEAN_AND_ASSIGN[] PROGMEM = "&&=";
+const int8_t SYMBOL_TEXT_BOOLEAN_OR_ASSIGN[] PROGMEM = "||=";
+const int8_t SYMBOL_TEXT_BOOLEAN_XOR_ASSIGN[] PROGMEM = "^^=";
+const int8_t SYMBOL_TEXT_BITWISE_AND_ASSIGN[] PROGMEM = "&=";
+const int8_t SYMBOL_TEXT_BITWiSE_OR_ASSIGN[] PROGMEM = "|=";
+const int8_t SYMBOL_TEXT_BITWISE_XOR_ASSIGN[] PROGMEM = "^=";
+const int8_t SYMBOL_TEXT_BITSHIFT_LEFT_ASSIGN[] PROGMEM = "<<=";
+const int8_t SYMBOL_TEXT_BITSHIFT_RIGHT_ASSIGN[] PROGMEM = ">>=";
+
+const int8_t SYMBOL_TEXT_IF[] PROGMEM = "if:";
+const int8_t SYMBOL_TEXT_ELSE_IF[] PROGMEM = "elif:";
+const int8_t SYMBOL_TEXT_ELSE[] PROGMEM = "else;";
+const int8_t SYMBOL_TEXT_END[] PROGMEM = "end;";
+const int8_t SYMBOL_TEXT_WHILE[] PROGMEM = "while:";
+const int8_t SYMBOL_TEXT_BREAK[] PROGMEM = "break;";
+const int8_t SYMBOL_TEXT_CONTINUE[] PROGMEM = "cont;";
+const int8_t SYMBOL_TEXT_FUNCTION[] PROGMEM = "func:";
+const int8_t SYMBOL_TEXT_RETURN_WITH_VALUE[] PROGMEM = "ret:";
+const int8_t SYMBOL_TEXT_RETURN[] PROGMEM = "ret;";
+const int8_t SYMBOL_TEXT_QUIT[] PROGMEM = "quit;";
+
+const int8_t SYMBOL_TEXT_RANDOM[] PROGMEM = "rand;";
+const int8_t SYMBOL_TEXT_RANDOM_INTEGER[] PROGMEM = "randInt:";
+const int8_t SYMBOL_TEXT_ABSOLUTE_VALUE[] PROGMEM = "abs:";
+const int8_t SYMBOL_TEXT_ROUND[] PROGMEM = "round:";
+const int8_t SYMBOL_TEXT_FLOOR[] PROGMEM = "floor:";
+const int8_t SYMBOL_TEXT_CEILING[] PROGMEM = "ceil:";
+const int8_t SYMBOL_TEXT_SINE[] PROGMEM = "sin:";
+const int8_t SYMBOL_TEXT_COSINE[] PROGMEM = "cos:";
+const int8_t SYMBOL_TEXT_TANGENT[] PROGMEM = "tan:";
+const int8_t SYMBOL_TEXT_SQUARE_ROOT[] PROGMEM = "sqrt:";
+const int8_t SYMBOL_TEXT_POWER[] PROGMEM = "pow:";
+const int8_t SYMBOL_TEXT_LOG[] PROGMEM = "log:";
+
+const int8_t SYMBOL_TEXT_NUMBER[] PROGMEM = "num:";
+const int8_t SYMBOL_TEXT_STRING[] PROGMEM = "str:";
+const int8_t SYMBOL_TEXT_TYPE[] PROGMEM = "type:";
+const int8_t SYMBOL_TEXT_LENGTH[] PROGMEM = "len:";
+const int8_t SYMBOL_TEXT_COPY[] PROGMEM = "copy:";
+const int8_t SYMBOL_TEXT_INSERT[] PROGMEM = "ins:";
+const int8_t SYMBOL_TEXT_REMOVE[] PROGMEM = "rem:";
+const int8_t SYMBOL_TEXT_SUBSEQUENCE[] PROGMEM = "sub:";
+const int8_t SYMBOL_TEXT_INSERT_SUBSEQUENCE[] PROGMEM = "insSub:";
+const int8_t SYMBOL_TEXT_REMOVE_SUBSEQUENCE[] PROGMEM = "remSub:";
+
+const int8_t SYMBOL_TEXT_PRINT[] PROGMEM = "print:";
+const int8_t SYMBOL_TEXT_REQUEST_STRING[] PROGMEM = "reqStr;";
+const int8_t SYMBOL_TEXT_REQUEST_NUMBER[] PROGMEM = "reqNum;";
+const int8_t SYMBOL_TEXT_FILE_EXISTS[] PROGMEM = "fExists:";
+const int8_t SYMBOL_TEXT_FILE_SIZE[] PROGMEM = "fSize:";
+const int8_t SYMBOL_TEXT_FILE_CREATE[] PROGMEM = "fCreate:";
+const int8_t SYMBOL_TEXT_FILE_DELETE[] PROGMEM = "fDelete:";
+const int8_t SYMBOL_TEXT_FILE_READ[] PROGMEM = "fRead:";
+const int8_t SYMBOL_TEXT_FILE_WRITE[] PROGMEM = "fWrite:";
+
+const int8_t *SYMBOL_TEXT_LIST[] PROGMEM = {
+    SYMBOL_TEXT_BOOLEAN_AND,
+    SYMBOL_TEXT_BOOLEAN_OR,
+    SYMBOL_TEXT_BOOLEAN_XOR,
+    SYMBOL_TEXT_BITSHIFT_LEFT,
+    SYMBOL_TEXT_BITSHIFT_RIGHT,
+    SYMBOL_TEXT_INCREMENT,
+    SYMBOL_TEXT_DECREMENT,
+    SYMBOL_TEXT_EQUAL,
+    SYMBOL_TEXT_NOT_EQUAL,
+    SYMBOL_TEXT_GREATER_OR_EQUAL,
+    SYMBOL_TEXT_LESS_OR_EQUAL,
+    SYMBOL_TEXT_ADD_ASSIGN,
+    SYMBOL_TEXT_SUBTRACT_ASSIGN,
+    SYMBOL_TEXT_MULTIPLY_ASSIGN,
+    SYMBOL_TEXT_DIVIDE_ASSIGN,
+    SYMBOL_TEXT_MODULUS_ASSIGN,
+    SYMBOL_TEXT_BOOLEAN_AND_ASSIGN,
+    SYMBOL_TEXT_BOOLEAN_OR_ASSIGN,
+    SYMBOL_TEXT_BOOLEAN_XOR_ASSIGN,
+    SYMBOL_TEXT_BITWISE_AND_ASSIGN,
+    SYMBOL_TEXT_BITWiSE_OR_ASSIGN,
+    SYMBOL_TEXT_BITWISE_XOR_ASSIGN,
+    SYMBOL_TEXT_BITSHIFT_LEFT_ASSIGN,
+    SYMBOL_TEXT_BITSHIFT_RIGHT_ASSIGN,
+    SYMBOL_TEXT_IF,
+    SYMBOL_TEXT_ELSE_IF,
+    SYMBOL_TEXT_ELSE,
+    SYMBOL_TEXT_END,
+    SYMBOL_TEXT_WHILE,
+    SYMBOL_TEXT_BREAK,
+    SYMBOL_TEXT_CONTINUE,
+    SYMBOL_TEXT_FUNCTION,
+    SYMBOL_TEXT_RETURN_WITH_VALUE,
+    SYMBOL_TEXT_RETURN,
+    SYMBOL_TEXT_QUIT,
+    SYMBOL_TEXT_RANDOM,
+    SYMBOL_TEXT_RANDOM_INTEGER,
+    SYMBOL_TEXT_ABSOLUTE_VALUE,
+    SYMBOL_TEXT_ROUND,
+    SYMBOL_TEXT_FLOOR,
+    SYMBOL_TEXT_CEILING,
+    SYMBOL_TEXT_SINE,
+    SYMBOL_TEXT_COSINE,
+    SYMBOL_TEXT_TANGENT,
+    SYMBOL_TEXT_SQUARE_ROOT,
+    SYMBOL_TEXT_POWER,
+    SYMBOL_TEXT_LOG,
+    SYMBOL_TEXT_NUMBER,
+    SYMBOL_TEXT_STRING,
+    SYMBOL_TEXT_TYPE,
+    SYMBOL_TEXT_LENGTH,
+    SYMBOL_TEXT_COPY,
+    SYMBOL_TEXT_INSERT,
+    SYMBOL_TEXT_REMOVE,
+    SYMBOL_TEXT_SUBSEQUENCE,
+    SYMBOL_TEXT_INSERT_SUBSEQUENCE,
+    SYMBOL_TEXT_REMOVE_SUBSEQUENCE,
+    SYMBOL_TEXT_PRINT,
+    SYMBOL_TEXT_REQUEST_STRING,
+    SYMBOL_TEXT_REQUEST_NUMBER,
+    SYMBOL_TEXT_FILE_EXISTS,
+    SYMBOL_TEXT_FILE_SIZE,
+    SYMBOL_TEXT_FILE_CREATE,
+    SYMBOL_TEXT_FILE_DELETE,
+    SYMBOL_TEXT_FILE_READ,
+    SYMBOL_TEXT_FILE_WRITE
+};
+
+#define SYMBOL_BOOLEAN_AND 128
+#define SYMBOL_BOOLEAN_OR 129
+#define SYMBOL_BOOLEAN_XOR 130
+#define SYMBOL_BITSHIFT_LEFT 131
+#define SYMBOL_BITSHIFT_RIGHT 132
+#define SYMBOL_INCREMENT 133
+#define SYMBOL_DECREMENT 134
+#define SYMBOL_EQUAL 135
+#define SYMBOL_NOT_EQUAL 136
+#define SYMBOL_GREATER_OR_EQUAL 137
+#define SYMBOL_LESS_OR_EQUAL 138
+#define SYMBOL_ADD_ASSIGN 139
+#define SYMBOL_SUBTRACT_ASSIGN 140
+#define SYMBOL_MULTIPLY_ASSIGN 141
+#define SYMBOL_DIVIDE_ASSIGN 142
+#define SYMBOL_MODULUS_ASSIGN 143
+#define SYMBOL_BOOLEAN_AND_ASSIGN 144
+#define SYMBOL_BOOLEAN_OR_ASSIGN 145
+#define SYMBOL_BOOLEAN_XOR_ASSIGN 146
+#define SYMBOL_BITWISE_AND_ASSIGN 147
+#define SYMBOL_BITWiSE_OR_ASSIGN 148
+#define SYMBOL_BITWISE_XOR_ASSIGN 149
+#define SYMBOL_BITSHIFT_LEFT_ASSIGN 150
+#define SYMBOL_BITSHIFT_RIGHT_ASSIGN 151
+#define SYMBOL_IF 152
+#define SYMBOL_ELSE_IF 153
+#define SYMBOL_ELSE 154
+#define SYMBOL_END 155
+#define SYMBOL_WHILE 156
+#define SYMBOL_BREAK 157
+#define SYMBOL_CONTINUE 158
+#define SYMBOL_FUNCTION 159
+#define SYMBOL_RETURN_WITH_VALUE 160
+#define SYMBOL_RETURN 161
+#define SYMBOL_QUIT 162
+#define SYMBOL_RANDOM 163
+#define SYMBOL_RANDOM_INTEGER 164
+#define SYMBOL_ABSOLUTE_VALUE 165
+#define SYMBOL_ROUND 166
+#define SYMBOL_FLOOR 167
+#define SYMBOL_CEILING 168
+#define SYMBOL_SINE 169
+#define SYMBOL_COSINE 170
+#define SYMBOL_TANGENT 171
+#define SYMBOL_SQUARE_ROOT 172
+#define SYMBOL_POWER 173
+#define SYMBOL_LOG 174
+#define SYMBOL_NUMBER 175
+#define SYMBOL_STRING 176
+#define SYMBOL_TYPE 177
+#define SYMBOL_LENGTH 178
+#define SYMBOL_COPY 179
+#define SYMBOL_INSERT 180
+#define SYMBOL_REMOVE 181
+#define SYMBOL_SUBSEQUENCE 182
+#define SYMBOL_INSERT_SUBSEQUENCE 183
+#define SYMBOL_REMOVE_SUBSEQUENCE 184
+#define SYMBOL_PRINT 185
+#define SYMBOL_REQUEST_STRING 186
+#define SYMBOL_REQUEST_NUMBER 187
+#define SYMBOL_FILE_EXISTS 188
+#define SYMBOL_FILE_SIZE 189
+#define SYMBOL_FILE_CREATE 190
+#define SYMBOL_FILE_DELETE 191
+#define SYMBOL_FILE_READ 192
+#define SYMBOL_FILE_WRITE 193
+
+int8_t pgm_read_byte(const int8_t *pointer) {
+    return *pointer;
+}
+
+int16_t pgm_read_word(const int16_t *pointer) {
+    return *pointer;
+}
+
+int32_t pgm_read_dword(const int32_t *pointer) {
+    return *pointer;
+}
+
+const void *pgm_read_ptr(const void **pointer) {
+    return *pointer;
 }
 
 void displayCharacter(int8_t posX, int8_t posY, int8_t character) {
@@ -69,52 +269,7 @@ void displayCharacter(int8_t posX, int8_t posY, int8_t character) {
     displayBuffer[posX + posY * DISPLAY_WIDTH] = character;
 }
 
-void displayText(int8_t posX, int8_t posY, int8_t *text) {
-    int16_t index = 0;
-    while (posY < DISPLAY_HEIGHT) {
-        int8_t tempCharacter = text[index];
-        if (tempCharacter == 0) {
-            break;
-        }
-        displayCharacter(posX, posY, tempCharacter);
-        index += 1;
-        posX += 1;
-        if (posX >= DISPLAY_WIDTH) {
-            posX = 0;
-            posY += 1;
-        }
-    }
-}
-
-void drawDisplayBuffer() {
-    attron(COLOR_PAIR(BLACK_ON_WHITE));
-    int8_t index = 0;
-    int32_t tempPosY = 0;
-    while (tempPosY < DISPLAY_HEIGHT) {
-        int32_t tempPosX = 0;
-        while (tempPosX < DISPLAY_WIDTH) {
-            int8_t tempCharacter = displayBuffer[index];
-            mvaddch(tempPosY + DISPLAY_OFFSET_Y, tempPosX + DISPLAY_OFFSET_X, tempCharacter);
-            index += 1;
-            tempPosX += 1;
-        }
-        tempPosY += 1;
-    }
-    attroff(COLOR_PAIR(BLACK_ON_WHITE));
-}
-
-void handleResize() {
-    int32_t tempWidth;
-    int32_t tempHeight;
-    getmaxyx(window, tempHeight, tempWidth);
-    if (tempWidth == windowWidth && tempHeight == windowHeight) {
-        return;
-    }
-    windowWidth = tempWidth;
-    windowHeight = tempHeight;
-    drawBackground();
-    drawDisplayBuffer();
-}
+void handleResize();
 
 int8_t getKey() {
     while (true) {
@@ -161,6 +316,126 @@ int8_t getKey() {
     }
 }
 
+void drawDisplayBuffer() {
+    attron(COLOR_PAIR(BLACK_ON_WHITE));
+    int8_t index = 0;
+    int32_t tempPosY = 0;
+    while (tempPosY < DISPLAY_HEIGHT) {
+        int32_t tempPosX = 0;
+        while (tempPosX < DISPLAY_WIDTH) {
+            int8_t tempCharacter = displayBuffer[index];
+            mvaddch(tempPosY + DISPLAY_OFFSET_Y, tempPosX + DISPLAY_OFFSET_X, tempCharacter);
+            index += 1;
+            tempPosX += 1;
+        }
+        tempPosY += 1;
+    }
+    attroff(COLOR_PAIR(BLACK_ON_WHITE));
+}
+
+void drawBackground() {
+    int32_t tempPosY = 0;
+    while (tempPosY < windowHeight) {
+        int32_t tempPosX = 0;
+        while (tempPosX < windowWidth) {
+            int8_t tempColor;
+            if (tempPosX >= DISPLAY_OFFSET_X && tempPosX < DISPLAY_OFFSET_X + DISPLAY_WIDTH
+                    && tempPosY >= DISPLAY_OFFSET_Y && tempPosY < DISPLAY_OFFSET_Y + DISPLAY_HEIGHT) {
+                tempColor = BLACK_ON_WHITE;
+            } else {
+                tempColor = WHITE_ON_CYAN;
+            }
+            attron(COLOR_PAIR(tempColor));
+            mvaddch(tempPosY, tempPosX, ' ');
+            attroff(COLOR_PAIR(tempColor));
+            tempPosX += 1;
+        }
+        tempPosY += 1;
+    }
+    attron(COLOR_PAIR(WHITE_ON_CYAN));
+    mvprintw(1, 1, "DUO Travel Emulator");
+    attroff(COLOR_PAIR(WHITE_ON_CYAN));
+    refresh();
+}
+
+void handleResize() {
+    int32_t tempWidth;
+    int32_t tempHeight;
+    getmaxyx(window, tempHeight, tempWidth);
+    if (tempWidth == windowWidth && tempHeight == windowHeight) {
+        return;
+    }
+    windowWidth = tempWidth;
+    windowHeight = tempHeight;
+    drawBackground();
+    drawDisplayBuffer();
+}
+
+int8_t getSymbolWidth(uint8_t symbol) {
+    int8_t *tempText = (int8_t *)pgm_read_ptr((const void **)(SYMBOL_TEXT_LIST + (symbol - 128)));
+    int8_t index = 0;
+    while (true) {
+        int8_t tempCharacter = pgm_read_byte(tempText + index);
+        if (tempCharacter == 0) {
+            return index;
+        }
+        index += 1;
+    }
+}
+
+void displaySymbol(int8_t posX, int8_t posY, uint8_t symbol) {
+    if (symbol < 128) {
+        displayCharacter(posX, posY, symbol);
+    } else {
+        int8_t *tempText = (int8_t *)pgm_read_ptr((const void **)(SYMBOL_TEXT_LIST + (symbol - 128)));
+        int8_t index = 0;
+        while (true) {
+            int8_t tempCharacter = pgm_read_byte(tempText + index);
+            if (tempCharacter == 0) {
+                return;
+            }
+            displayCharacter(posX, posY, tempCharacter);
+            index += 1;
+            posX += 1;
+        }
+    }
+}
+
+void displayText(int8_t posX, int8_t posY, int8_t *text) {
+    int16_t index = 0;
+    while (posY < DISPLAY_HEIGHT) {
+        uint8_t tempSymbol = text[index];
+        if (tempSymbol == 0) {
+            break;
+        }
+        int8_t tempWidth;
+        if (tempSymbol < 128) {
+            tempWidth = 1;
+        } else {
+            tempWidth = getSymbolWidth(tempSymbol);
+        }
+        if (posX + tempWidth > DISPLAY_WIDTH) {
+            posX = 0;
+            posY += 1;
+        }
+        displaySymbol(posX, posY, tempSymbol);
+        index += 1;
+        posX += tempWidth;
+    }
+}
+
+void clearDisplay() {
+    int32_t tempPosY = 0;
+    while (tempPosY < DISPLAY_HEIGHT) {
+        int32_t tempPosX = 0;
+        while (tempPosX < DISPLAY_WIDTH) {
+            displayCharacter(tempPosX, tempPosY, ' ');
+            tempPosX += 1;
+        }
+        tempPosY += 1;
+    }
+}
+
 int main(int argc, const char *argv[]) {
     
     int8_t index = 0;
@@ -179,7 +454,10 @@ int main(int argc, const char *argv[]) {
     init_pair(WHITE_ON_CYAN, COLOR_WHITE, COLOR_CYAN);
     handleResize();
     
-    displayText(0, 0, "HELLO");
+    clearDisplay();
+    int8_t tempText[] = "ABC DEF";
+    tempText[3] = (uint8_t)152;
+    displayText(0, 0, tempText);
     getKey();
     
     endwin();

@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -c
+CFLAGS = -Wall -Wno-pointer-sign -c
 LDFLAGS = -lncurses
 DIRBUILD = build
 DIRSRC = src

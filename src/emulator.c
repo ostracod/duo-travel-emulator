@@ -30,10 +30,12 @@
 #define KEY_NEWLINE 10
 #define KEY_ESCAPE 11
 
-WINDOW *window;
-int32_t windowWidth;
-int32_t windowHeight;
-int8_t displayBuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
+#define ALLOCATION_PREVIOUS_OFFSET sizeof(int8_t *)
+#define ALLOCATION_NEXT_OFFSET (ALLOCATION_PREVIOUS_OFFSET + sizeof(int8_t *))
+#define ALLOCATION_SIZE_OFFSET (ALLOCATION_NEXT_OFFSET + 2)
+#define ALLOCATION_IS_REACHABLE_OFFSET (ALLOCATION_SIZE_OFFSET + 1)
+#define ALLOCATION_HEADER_SIZE ALLOCATION_SIZE_OFFSET
+#define HEAP_START_ADDRESS (memory + sizeof(memory))
 
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
@@ -410,6 +412,14 @@ const int8_t SYMBOL_SET_SIZE_LIST[] PROGMEM = {
     sizeof(SYMBOL_SET_VALUE)
 };
 
+WINDOW *window;
+int32_t windowWidth;
+int32_t windowHeight;
+int8_t displayBuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
+
+int8_t memory[1500];
+int8_t *firstAllocation = NULL;
+
 int8_t pgm_read_byte(const int8_t *pointer) {
     return *pointer;
 }
@@ -538,6 +548,57 @@ void handleResize() {
     drawDisplayBuffer();
 }
 
+int8_t *allocate(int16_t size) {
+    int8_t *tempPreviousAllocation = NULL;
+    int8_t *tempNextAllocation = firstAllocation;
+    int8_t *output;
+    while (true) {
+        int8_t *tempAddress;
+        if (tempPreviousAllocation == NULL) {
+            tempAddress = HEAP_START_ADDRESS;
+        } else {
+            tempAddress = tempPreviousAllocation - ALLOCATION_HEADER_SIZE;
+        }
+        if (tempNextAllocation == NULL) {
+            output = tempAddress - size;
+            break;
+        }
+        int16_t tempAllocationSize = *(int16_t *)(tempNextAllocation - ALLOCATION_SIZE_OFFSET);
+        int16_t tempGapSize = (tempAddress - tempNextAllocation) - tempAllocationSize;
+        if (tempGapSize >= size + ALLOCATION_HEADER_SIZE) {
+            output = tempAddress - size;
+            break;
+        }
+        tempPreviousAllocation = tempNextAllocation;
+        tempNextAllocation = *(int8_t **)(tempPreviousAllocation - ALLOCATION_NEXT_OFFSET);
+    }
+    *(int8_t **)(output - ALLOCATION_PREVIOUS_OFFSET) = tempPreviousAllocation;
+    *(int8_t **)(output - ALLOCATION_NEXT_OFFSET) = tempNextAllocation;
+    *(int16_t *)(output - ALLOCATION_SIZE_OFFSET) = size;
+    if (tempPreviousAllocation == NULL) {
+        firstAllocation = output;
+    } else {
+        *(int8_t **)(tempPreviousAllocation - ALLOCATION_NEXT_OFFSET) = output;
+    }
+    if (tempNextAllocation != NULL) {
+        *(int8_t **)(tempNextAllocation - ALLOCATION_PREVIOUS_OFFSET) = output;
+    }
+    return output;
+}
+
+void deallocate(int8_t *allocation) {
+    int8_t *tempPreviousAllocation = *(int8_t **)(allocation - ALLOCATION_PREVIOUS_OFFSET);
+    int8_t *tempNextAllocation = *(int8_t **)(allocation - ALLOCATION_NEXT_OFFSET);
+    if (tempPreviousAllocation == NULL) {
+        firstAllocation = tempNextAllocation;
+    } else {
+        *(int8_t **)(tempPreviousAllocation - ALLOCATION_NEXT_OFFSET) = tempNextAllocation;
+    }
+    if (tempNextAllocation != NULL) {
+        *(int8_t **)(tempNextAllocation - ALLOCATION_PREVIOUS_OFFSET) = tempPreviousAllocation;
+    }
+}
+
 int8_t getSymbolWidth(uint8_t symbol) {
     int8_t *tempText = (int8_t *)pgm_read_ptr((const void **)(SYMBOL_TEXT_LIST + (symbol - 128)));
     int8_t index = 0;
@@ -604,6 +665,20 @@ void clearDisplay() {
 }
 
 int main(int argc, const char *argv[]) {
+    
+    // TEST CODE.
+    /*
+    int8_t *tempAllocation1 = allocate(30);
+    int8_t *tempAllocation2 = allocate(30);
+    int8_t *tempAllocation3 = allocate(30);
+    deallocate(tempAllocation2);
+    int8_t *tempAllocation4 = allocate(40);
+    printf("%ld\n", tempAllocation1 - memory);
+    printf("%ld\n", tempAllocation2 - memory);
+    printf("%ld\n", tempAllocation3 - memory);
+    printf("%ld\n", tempAllocation4 - memory);
+    return 0;
+    */
     
     int8_t index = 0;
     while (index < DISPLAY_WIDTH * DISPLAY_HEIGHT) {

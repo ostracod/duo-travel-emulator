@@ -32,7 +32,7 @@
 WINDOW *window;
 int32_t windowWidth;
 int32_t windowHeight;
-
+int8_t displayBuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 
 void drawBackground() {
     int32_t tempPosY = 0;
@@ -59,6 +59,50 @@ void drawBackground() {
     refresh();
 }
 
+void displayCharacter(int8_t posX, int8_t posY, int8_t character) {
+    if (posX < 0 || posX >= DISPLAY_WIDTH || posY < 0 || posY >= DISPLAY_HEIGHT) {
+        return;
+    }
+    attron(COLOR_PAIR(BLACK_ON_WHITE));
+    mvaddch(posY + DISPLAY_OFFSET_Y, posX + DISPLAY_OFFSET_X, character);
+    attroff(COLOR_PAIR(BLACK_ON_WHITE));
+    displayBuffer[posX + posY * DISPLAY_WIDTH] = character;
+}
+
+void displayText(int8_t posX, int8_t posY, int8_t *text) {
+    int16_t index = 0;
+    while (posY < DISPLAY_HEIGHT) {
+        int8_t tempCharacter = text[index];
+        if (tempCharacter == 0) {
+            break;
+        }
+        displayCharacter(posX, posY, tempCharacter);
+        index += 1;
+        posX += 1;
+        if (posX >= DISPLAY_WIDTH) {
+            posX = 0;
+            posY += 1;
+        }
+    }
+}
+
+void drawDisplayBuffer() {
+    attron(COLOR_PAIR(BLACK_ON_WHITE));
+    int8_t index = 0;
+    int32_t tempPosY = 0;
+    while (tempPosY < DISPLAY_HEIGHT) {
+        int32_t tempPosX = 0;
+        while (tempPosX < DISPLAY_WIDTH) {
+            int8_t tempCharacter = displayBuffer[index];
+            mvaddch(tempPosY + DISPLAY_OFFSET_Y, tempPosX + DISPLAY_OFFSET_X, tempCharacter);
+            index += 1;
+            tempPosX += 1;
+        }
+        tempPosY += 1;
+    }
+    attroff(COLOR_PAIR(BLACK_ON_WHITE));
+}
+
 void handleResize() {
     int32_t tempWidth;
     int32_t tempHeight;
@@ -69,6 +113,7 @@ void handleResize() {
     windowWidth = tempWidth;
     windowHeight = tempHeight;
     drawBackground();
+    drawDisplayBuffer();
 }
 
 int8_t getKey() {
@@ -116,33 +161,13 @@ int8_t getKey() {
     }
 }
 
-void displayCharacter(int8_t posX, int8_t posY, int8_t character) {
-    if (posX < 0 || posX >= DISPLAY_WIDTH || posY < 0 || posY >= DISPLAY_HEIGHT) {
-        return;
-    }
-    attron(COLOR_PAIR(BLACK_ON_WHITE));
-    mvaddch(posY + DISPLAY_OFFSET_Y, posX + DISPLAY_OFFSET_X, character);
-    attroff(COLOR_PAIR(BLACK_ON_WHITE));
-}
-
-void displayText(int8_t posX, int8_t posY, int8_t *text) {
-    int16_t index = 0;
-    while (posY < DISPLAY_HEIGHT) {
-        int8_t tempCharacter = text[index];
-        if (tempCharacter == 0) {
-            break;
-        }
-        displayCharacter(posX, posY, tempCharacter);
-        index += 1;
-        posX += 1;
-        if (posX >= DISPLAY_WIDTH) {
-            posX = 0;
-            posY += 1;
-        }
-    }
-}
-
 int main(int argc, const char *argv[]) {
+    
+    int8_t index = 0;
+    while (index < DISPLAY_WIDTH * DISPLAY_HEIGHT) {
+        displayBuffer[index] = ' ';
+        index += 1;
+    }
     
     window = initscr();
     noecho();

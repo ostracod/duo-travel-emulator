@@ -49,7 +49,8 @@
 #define LIST_DATA_OFFSET (STRING_LENGTH_OFFSET + 2)
 
 #define VALUE_TYPE_NUMBER 1
-#define VALUE_TYPE_POINTER 2
+#define VALUE_TYPE_STRING 2
+#define VALUE_TYPE_LIST 3
 
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
@@ -426,7 +427,17 @@ const int8_t SYMBOL_SET_SIZE_LIST[] PROGMEM = {
     sizeof(SYMBOL_SET_VALUE)
 };
 
-const int8_t TEST_MESSAGE[] PROGMEM = "THIS\nIS A REALLY LONG \x98 MESSAGE TO PRINT ON THE\nSCREEN";
+const int8_t TEST_MESSAGE_1[] PROGMEM = "TITLE";
+const int8_t TEST_MESSAGE_2[] PROGMEM = "ONE";
+const int8_t TEST_MESSAGE_3[] PROGMEM = "TWO";
+const int8_t TEST_MESSAGE_4[] PROGMEM = "THREE";
+const int8_t TEST_MESSAGE_5[] PROGMEM = "FOUR";
+const int8_t *TEST_MESSAGE_LIST[] PROGMEM = {
+    TEST_MESSAGE_2,
+    TEST_MESSAGE_3,
+    TEST_MESSAGE_4,
+    TEST_MESSAGE_5,
+};
 
 typedef struct value {
     int8_t type;
@@ -569,7 +580,7 @@ void handleResize() {
     drawDisplayBuffer();
 }
 
-int16_t getProgMemTextLength(const int8_t *text) {
+static int16_t getProgMemTextLength(const int8_t *text) {
     int16_t index = 0;
     while (true) {
         if (pgm_read_byte(text + index) == 0) {
@@ -579,7 +590,7 @@ int16_t getProgMemTextLength(const int8_t *text) {
     }
 }
 
-void readProgMemText(int8_t *destination, const int8_t *text) {
+static void readProgMemText(int8_t *destination, const int8_t *text) {
     int16_t index = 0;
     while (true) {
         int8_t tempCharacter = pgm_read_byte(text + index);
@@ -591,7 +602,7 @@ void readProgMemText(int8_t *destination, const int8_t *text) {
     }
 }
 
-int8_t *allocate(int16_t size, int8_t type) {
+static int8_t *allocate(int16_t size, int8_t type) {
     int8_t *tempPreviousAllocation = NULL;
     int8_t *tempNextAllocation = firstAllocation;
     int8_t *output;
@@ -630,7 +641,7 @@ int8_t *allocate(int16_t size, int8_t type) {
     return output;
 }
 
-void deallocate(int8_t *allocation) {
+static void deallocate(int8_t *allocation) {
     int8_t tempType = *(int8_t *)(allocation - ALLOCATION_TYPE_OFFSET);
     if (tempType == ALLOCATION_TYPE_POINTER) {
         deallocate(*(int8_t **)allocation);
@@ -647,7 +658,7 @@ void deallocate(int8_t *allocation) {
     }
 }
 
-int8_t *createEmptyString(int16_t length) {
+static int8_t *createEmptyString(int16_t length) {
     int8_t *output = allocate(sizeof(int8_t *), ALLOCATION_TYPE_POINTER);
     int8_t *tempString = allocate(STRING_DATA_OFFSET + length + 1, ALLOCATION_TYPE_STRING);
     *(int8_t **)output = tempString;
@@ -656,28 +667,29 @@ int8_t *createEmptyString(int16_t length) {
     return output;
 }
 
-int8_t *createStringFromProgMem(const int8_t *text) {
+static int8_t *createStringFromProgMem(const int8_t *text) {
     int8_t *output = createEmptyString(getProgMemTextLength(text));
     int8_t *tempString = *(int8_t **)output;
     readProgMemText(tempString + STRING_DATA_OFFSET, text);
     return output;
 }
 
-int8_t *createEmptyList(int16_t length) {
+static int8_t *createEmptyList(int16_t length) {
     int8_t *output = allocate(sizeof(int8_t *), ALLOCATION_TYPE_POINTER);
     int8_t *tempList = allocate(LIST_DATA_OFFSET + length * sizeof(value_t), ALLOCATION_TYPE_LIST);
     *(int8_t **)output = tempList;
-    *(int16_t *)(tempList + LIST_DATA_OFFSET) = length;
+    *(int16_t *)(tempList + LIST_LENGTH_OFFSET) = length;
     int16_t index = 0;
     while (index < length) {
         value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
         tempValue->type = VALUE_TYPE_NUMBER;
         *(float *)&(tempValue->data) = 0.0;
+        index += 1;
     }
     return output;
 }
 
-int8_t getSymbolWidth(uint8_t symbol) {
+static int8_t getSymbolWidth(uint8_t symbol) {
     int8_t *tempText = (int8_t *)pgm_read_ptr((const void **)(SYMBOL_TEXT_LIST + (symbol - 128)));
     int8_t index = 0;
     while (true) {
@@ -689,7 +701,7 @@ int8_t getSymbolWidth(uint8_t symbol) {
     }
 }
 
-void displaySymbol(int8_t posX, int8_t posY, uint8_t symbol) {
+static void displaySymbol(int8_t posX, int8_t posY, uint8_t symbol) {
     if (symbol < 128) {
         displayCharacter(posX, posY, symbol);
     } else {
@@ -707,7 +719,7 @@ void displaySymbol(int8_t posX, int8_t posY, uint8_t symbol) {
     }
 }
 
-void displayText(int8_t posX, int8_t posY, int8_t *text) {
+static void displayText(int8_t posX, int8_t posY, int8_t *text) {
     int16_t index = 0;
     while (posY < DISPLAY_HEIGHT) {
         uint8_t tempSymbol = text[index];
@@ -732,18 +744,33 @@ void displayText(int8_t posX, int8_t posY, int8_t *text) {
     }
 }
 
-void displayTextFromProgMem(int8_t posX, int8_t posY, const int8_t *text) {
+static void displayTextFromProgMem(int8_t posX, int8_t posY, const int8_t *text) {
     int8_t tempBuffer[getProgMemTextLength(text) + 1];
     readProgMemText(tempBuffer, text);
     displayText(posX, posY, tempBuffer);
 }
 
-void displayStringAllocation(int8_t posX, int8_t posY, int8_t *string) {
+static void displayStringAllocation(int8_t posX, int8_t posY, int8_t *string) {
     int8_t *tempString = *(int8_t **)string;
     displayText(posX, posY, tempString + STRING_DATA_OFFSET);
 }
 
-void clearDisplay() {
+static int8_t displayValue(int8_t posX, int8_t posY, value_t *value) {
+    if (value->type == VALUE_TYPE_NUMBER) {
+        int8_t tempBuffer[20];
+        sprintf(tempBuffer, "%f", *(float *)&(value->data));
+        displayText(posX, posY, tempBuffer);
+        return true;
+    } else if (value->type == VALUE_TYPE_STRING) {
+        int8_t *tempString = *(int8_t **)&(value->data);
+        displayStringAllocation(posX, posY, tempString);
+        return true;
+    } else {
+        return false;
+    }
+}
+
+static void clearDisplay() {
     int32_t tempPosY = 0;
     while (tempPosY < DISPLAY_HEIGHT) {
         int32_t tempPosX = 0;
@@ -755,7 +782,15 @@ void clearDisplay() {
     }
 }
 
-int8_t *seekTextRow(int8_t *text, int16_t posY) {
+static void clearDisplayRegion(int8_t posX, int8_t posY, int8_t width) {
+    int8_t tempOffset = 0;
+    while (tempOffset < width) {
+        displayCharacter(posX + tempOffset, posY, ' ');
+        tempOffset += 1;
+    }
+}
+
+static int8_t *seekTextRow(int8_t *text, int16_t posY) {
     int8_t *output = text;
     int8_t tempPosX = 0;
     int16_t tempPosY = 0;
@@ -787,7 +822,7 @@ int8_t *seekTextRow(int8_t *text, int16_t posY) {
     return output;
 }
 
-int8_t printText(int8_t *text) {
+static int8_t printText(int8_t *text) {
     int16_t tempPosY = 0;
     int8_t *tempText = text;
     clearDisplay();
@@ -801,8 +836,11 @@ int8_t printText(int8_t *text) {
         if (tempKey == KEY_CURSOR_DOWN) {
             tempNextPosY += 1;
         }
-        if (tempKey == KEY_SELECT_OPTION || tempKey == KEY_ESCAPE) {
-            return tempKey;
+        if (tempKey == KEY_SELECT_OPTION) {
+            return true;
+        }
+        if (tempKey == KEY_ESCAPE) {
+            return false;
         }
         if (tempNextPosY != tempPosY) {
             int8_t *tempNextText = seekTextRow(text, tempNextPosY);
@@ -816,15 +854,106 @@ int8_t printText(int8_t *text) {
     }
 }
 
-int8_t printTextFromProgMem(const int8_t *text) {
+static int8_t printTextFromProgMem(const int8_t *text) {
     int8_t tempBuffer[getProgMemTextLength(text) + 1];
     readProgMemText(tempBuffer, text);
     return printText(tempBuffer);
 }
 
-int8_t printStringAllocation(int8_t *string) {
+static int8_t printStringAllocation(int8_t *string) {
     int8_t *tempString = *(int8_t **)string;
     return printText(tempString + STRING_DATA_OFFSET);
+}
+
+static int8_t printValue(value_t *value) {
+    if (value->type == VALUE_TYPE_NUMBER) {
+        int8_t tempBuffer[20];
+        sprintf(tempBuffer, "%f", *(float *)&(value->data));
+        printText(tempBuffer);
+        return true;
+    } else if (value->type == VALUE_TYPE_STRING) {
+        int8_t *tempString = *(int8_t **)&(value->data);
+        printStringAllocation(tempString);
+        return true;
+    } else {
+        return false;
+    }
+}
+
+static int8_t menu(int8_t *title, int8_t *optionList) {
+    int8_t *tempList = *(int8_t **)optionList;
+    int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+    clearDisplay();
+    displayStringAllocation(0, 0, title);
+    displayCharacter(0, 1, '*');
+    value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET);
+    displayValue(1, 1, tempValue);
+    int8_t index = 0;
+    while (true) {
+        int8_t tempKey = getKey();
+        int16_t tempNextIndex = index;
+        if (tempKey == KEY_CURSOR_UP) {
+            tempNextIndex -= 1;
+            if (tempNextIndex < 0) {
+                tempNextIndex = tempLength - 1;
+            }
+        }
+        if (tempKey == KEY_CURSOR_DOWN) {
+            tempNextIndex += 1;
+            if (tempNextIndex >= tempLength) {
+                tempNextIndex = 0;
+            }
+        }
+        if (tempKey == KEY_SELECT_OPTION) {
+            return index;
+        }
+        if (tempKey == KEY_ESCAPE) {
+            return -1;
+        }
+        if (tempNextIndex != index) {
+            index = tempNextIndex;
+            value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
+            clearDisplayRegion(1, 1, DISPLAY_WIDTH - 1);
+            displayValue(1, 1, tempValue);
+        }
+    }
+}
+
+static int8_t menuWithOptionsFromProgMem(int8_t *title, const int8_t **optionList, int8_t optionAmount) {
+    int8_t *tempList = createEmptyList(optionAmount);
+    value_t *tempListContents = (value_t *)(*(int8_t **)tempList + LIST_DATA_OFFSET);
+    int8_t index = 0;
+    while (index < optionAmount) {
+        int8_t *tempString = createStringFromProgMem(pgm_read_ptr((const void **)(optionList + index)));
+        value_t *tempValue = tempListContents + index;
+        tempValue->type = VALUE_TYPE_STRING;
+        *(int8_t **)&(tempValue->data) = tempString;
+        index += 1;
+    }
+    int8_t output = menu(title, tempList);
+    index = 0;
+    while (index < optionAmount) {
+        value_t *tempValue = tempListContents + index;
+        int8_t *tempString = *(int8_t **)&(tempValue->data);
+        deallocate(tempString);
+        index += 1;
+    }
+    deallocate(tempList);
+    return output;
+}
+
+static int8_t menuWithTitleFromProgMem(const int8_t *title, int8_t *optionList) {
+    int8_t *tempTitle = createStringFromProgMem(title);
+    int8_t output = menu(tempTitle, optionList);
+    deallocate(tempTitle);
+    return output;
+}
+
+static int8_t menuFromProgMem(const int8_t *title, const int8_t **optionList, int8_t optionAmount) {
+    int8_t *tempTitle = createStringFromProgMem(title);
+    int8_t output = menuWithOptionsFromProgMem(tempTitle, optionList, optionAmount);
+    deallocate(tempTitle);
+    return output;
 }
 
 int main(int argc, const char *argv[]) {
@@ -859,7 +988,7 @@ int main(int argc, const char *argv[]) {
     init_pair(WHITE_ON_CYAN, COLOR_WHITE, COLOR_CYAN);
     handleResize();
     
-    printTextFromProgMem(TEST_MESSAGE);
+    menuFromProgMem(TEST_MESSAGE_1, TEST_MESSAGE_LIST, sizeof(TEST_MESSAGE_LIST) / sizeof(*TEST_MESSAGE_LIST));
     
     endwin();
     

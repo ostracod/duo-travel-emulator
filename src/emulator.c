@@ -43,6 +43,12 @@
 #define ALLOCATION_TYPE_LIST_POINTER 3
 #define ALLOCATION_TYPE_LIST 4
 
+#define STRING_LENGTH_OFFSET 0
+#define STRING_DATA_OFFSET (STRING_LENGTH_OFFSET + 2)
+
+#define LIST_LENGTH_OFFSET 0
+#define LIST_DATA_OFFSET (STRING_LENGTH_OFFSET + 2)
+
 #define VALUE_TYPE_NUMBER 1
 #define VALUE_TYPE_STRING 2
 #define VALUE_TYPE_LIST 3
@@ -424,7 +430,7 @@ const int8_t SYMBOL_SET_SIZE_LIST[] PROGMEM = {
 
 typedef struct value {
     int8_t type;
-    int8_t data[sizeof(int8_t *)];
+    int8_t data[sizeof(int8_t *) > sizeof(float) ? sizeof(int8_t *) : sizeof(float)];
 } value_t;
 
 WINDOW *window;

@@ -426,6 +426,8 @@ const int8_t SYMBOL_SET_SIZE_LIST[] PROGMEM = {
     sizeof(SYMBOL_SET_VALUE)
 };
 
+const int8_t TEST_MESSAGE[] PROGMEM = "THIS\nIS A REALLY LONG \x98 MESSAGE TO PRINT ON THE\nSCREEN";
+
 typedef struct value {
     int8_t type;
     int8_t data[sizeof(int8_t *) > sizeof(float) ? sizeof(int8_t *) : sizeof(float)];
@@ -650,6 +652,7 @@ int8_t *createEmptyString(int16_t length) {
     int8_t *tempString = allocate(STRING_DATA_OFFSET + length + 1, ALLOCATION_TYPE_STRING);
     *(int8_t **)output = tempString;
     *(int16_t *)(tempString + STRING_LENGTH_OFFSET) = length;
+    *(int8_t *)(tempString + STRING_DATA_OFFSET) = 0;
     return output;
 }
 
@@ -657,6 +660,20 @@ int8_t *createStringFromProgMem(const int8_t *text) {
     int8_t *output = createEmptyString(getProgMemTextLength(text));
     int8_t *tempString = *(int8_t **)output;
     readProgMemText(tempString + STRING_DATA_OFFSET, text);
+    return output;
+}
+
+int8_t *createEmptyList(int16_t length) {
+    int8_t *output = allocate(sizeof(int8_t *), ALLOCATION_TYPE_POINTER);
+    int8_t *tempList = allocate(LIST_DATA_OFFSET + length * sizeof(value_t), ALLOCATION_TYPE_LIST);
+    *(int8_t **)output = tempList;
+    *(int16_t *)(tempList + LIST_DATA_OFFSET) = length;
+    int16_t index = 0;
+    while (index < length) {
+        value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
+        tempValue->type = VALUE_TYPE_NUMBER;
+        *(float *)&(tempValue->data) = 0.0;
+    }
     return output;
 }
 
@@ -703,13 +720,15 @@ void displayText(int8_t posX, int8_t posY, int8_t *text) {
         } else {
             tempWidth = getSymbolWidth(tempSymbol);
         }
-        if (posX + tempWidth > DISPLAY_WIDTH) {
+        if (posX + tempWidth > DISPLAY_WIDTH || tempSymbol == '\n') {
             posX = 0;
             posY += 1;
         }
-        displaySymbol(posX, posY, tempSymbol);
+        if (tempSymbol != '\n') {
+            displaySymbol(posX, posY, tempSymbol);
+            posX += tempWidth;
+        }
         index += 1;
-        posX += tempWidth;
     }
 }
 
@@ -734,6 +753,78 @@ void clearDisplay() {
         }
         tempPosY += 1;
     }
+}
+
+int8_t *seekTextRow(int8_t *text, int16_t posY) {
+    int8_t *output = text;
+    int8_t tempPosX = 0;
+    int16_t tempPosY = 0;
+    int16_t index = 0;
+    while (tempPosY < posY) {
+        uint8_t tempSymbol = text[index];
+        if (tempSymbol == 0) {
+            break;
+        }
+        int8_t tempWidth;
+        if (tempSymbol < 128) {
+            tempWidth = 1;
+        } else {
+            tempWidth = getSymbolWidth(tempSymbol);
+        }
+        if (tempPosX + tempWidth > DISPLAY_WIDTH || tempSymbol == '\n') {
+            tempPosX = 0;
+            tempPosY += 1;
+            output = text + index;
+            if (tempSymbol == '\n') {
+                output += 1;
+            }
+        }
+        if (tempSymbol != '\n') {
+            tempPosX += tempWidth;
+        }
+        index += 1;
+    }
+    return output;
+}
+
+int8_t printText(int8_t *text) {
+    int16_t tempPosY = 0;
+    int8_t *tempText = text;
+    clearDisplay();
+    displayText(0, 0, tempText);
+    while (true) {
+        int8_t tempKey = getKey();
+        int16_t tempNextPosY = tempPosY;
+        if (tempKey == KEY_CURSOR_UP) {
+            tempNextPosY -= 1;
+        }
+        if (tempKey == KEY_CURSOR_DOWN) {
+            tempNextPosY += 1;
+        }
+        if (tempKey == KEY_SELECT_OPTION || tempKey == KEY_ESCAPE) {
+            return tempKey;
+        }
+        if (tempNextPosY != tempPosY) {
+            int8_t *tempNextText = seekTextRow(text, tempNextPosY);
+            if (tempNextText != tempText) {
+                tempText = tempNextText;
+                tempPosY = tempNextPosY;
+                clearDisplay();
+                displayText(0, 0, tempText);
+            }
+        }
+    }
+}
+
+int8_t printTextFromProgMem(const int8_t *text) {
+    int8_t tempBuffer[getProgMemTextLength(text) + 1];
+    readProgMemText(tempBuffer, text);
+    return printText(tempBuffer);
+}
+
+int8_t printStringAllocation(int8_t *string) {
+    int8_t *tempString = *(int8_t **)string;
+    return printText(tempString + STRING_DATA_OFFSET);
 }
 
 int main(int argc, const char *argv[]) {
@@ -768,10 +859,7 @@ int main(int argc, const char *argv[]) {
     init_pair(WHITE_ON_CYAN, COLOR_WHITE, COLOR_CYAN);
     handleResize();
     
-    clearDisplay();
-    int8_t *tempString = createStringFromProgMem(SYMBOL_TEXT_RANDOM_INTEGER);
-    displayStringAllocation(0, 0, tempString);
-    getKey();
+    printTextFromProgMem(TEST_MESSAGE);
     
     endwin();
     

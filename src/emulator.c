@@ -690,6 +690,9 @@ static int8_t *createEmptyList(int16_t length) {
 }
 
 static int8_t getSymbolWidth(uint8_t symbol) {
+    if (symbol < 128) {
+        return 1;
+    }
     int8_t *tempText = (int8_t *)pgm_read_ptr((const void **)(SYMBOL_TEXT_LIST + (symbol - 128)));
     int8_t index = 0;
     while (true) {
@@ -726,12 +729,7 @@ static void displayText(int8_t posX, int8_t posY, int8_t *text) {
         if (tempSymbol == 0) {
             break;
         }
-        int8_t tempWidth;
-        if (tempSymbol < 128) {
-            tempWidth = 1;
-        } else {
-            tempWidth = getSymbolWidth(tempSymbol);
-        }
+        int8_t tempWidth = getSymbolWidth(tempSymbol);
         if (posX + tempWidth > DISPLAY_WIDTH || tempSymbol == '\n') {
             posX = 0;
             posY += 1;
@@ -800,12 +798,7 @@ static int8_t *seekTextRow(int8_t *text, int16_t posY) {
         if (tempSymbol == 0) {
             break;
         }
-        int8_t tempWidth;
-        if (tempSymbol < 128) {
-            tempWidth = 1;
-        } else {
-            tempWidth = getSymbolWidth(tempSymbol);
-        }
+        int8_t tempWidth = getSymbolWidth(tempSymbol);
         if (tempPosX + tempWidth > DISPLAY_WIDTH || tempSymbol == '\n') {
             tempPosX = 0;
             tempPosY += 1;
@@ -956,6 +949,71 @@ static int8_t menuFromProgMem(const int8_t *title, const int8_t **optionList, in
     return output;
 }
 
+static void displayEditTextLine(int8_t *text, int16_t index) {
+    clearDisplayRegion(0, 0, DISPLAY_WIDTH);
+    int8_t tempCursorPosX = DISPLAY_WIDTH / 2;
+    displayCharacter(tempCursorPosX, 0, '_');
+    int8_t tempIndex = index;
+    int8_t tempPosX = tempCursorPosX + 1;
+    while (true) {
+        if (tempPosX >= DISPLAY_WIDTH) {
+            break;
+        }
+        uint8_t tempSymbol = text[tempIndex];
+        if (tempSymbol == '\n' || tempSymbol == 0) {
+            break;
+        }
+        displaySymbol(tempPosX, 0, tempSymbol);
+        tempIndex += 1;
+        tempPosX += getSymbolWidth(tempSymbol);
+    }
+    tempIndex = index - 1;
+    tempPosX = tempCursorPosX;
+    while (true) {
+        if (tempIndex < 0) {
+            break;
+        }
+        uint8_t tempSymbol = text[tempIndex];
+        if (tempSymbol == '\n') {
+            break;
+        }
+        tempIndex -= 1;
+        tempPosX -= getSymbolWidth(tempSymbol);
+        displaySymbol(tempPosX, 0, tempSymbol);
+        if (tempPosX <= 0) {
+            break;
+        }
+    }
+}
+
+static int16_t editText(int8_t *text, int16_t index) {
+    displayEditTextLine(text, index);
+    while (true) {
+        int8_t tempKey = getKey();
+        int8_t shouldDisplayTextLine = false;
+        if (tempKey == KEY_CURSOR_LEFT) {
+            if (index > 0) {
+                uint8_t tempSymbol = text[index - 1];
+                if (tempSymbol != '\n') {
+                    index -= 1;
+                    shouldDisplayTextLine = true;
+                }
+            }
+        }
+        if (tempKey == KEY_CURSOR_RIGHT) {
+            uint8_t tempSymbol = text[index];
+            if (tempSymbol != '\n' && tempSymbol != 0) {
+                index += 1;
+                shouldDisplayTextLine = true;
+            }
+        }
+        if (shouldDisplayTextLine) {
+            displayEditTextLine(text, index);
+        }
+    }
+    return index;
+}
+
 int main(int argc, const char *argv[]) {
     
     // TEST CODE.
@@ -988,7 +1046,9 @@ int main(int argc, const char *argv[]) {
     init_pair(WHITE_ON_CYAN, COLOR_WHITE, COLOR_CYAN);
     handleResize();
     
-    menuFromProgMem(TEST_MESSAGE_1, TEST_MESSAGE_LIST, sizeof(TEST_MESSAGE_LIST) / sizeof(*TEST_MESSAGE_LIST));
+    //menuFromProgMem(TEST_MESSAGE_1, TEST_MESSAGE_LIST, sizeof(TEST_MESSAGE_LIST) / sizeof(*TEST_MESSAGE_LIST));
+    int8_t tempText[100] = "HELLO\nWORLD";
+    editText(tempText, 2);
     
     endwin();
     

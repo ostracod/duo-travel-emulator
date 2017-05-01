@@ -38,9 +38,8 @@
 #define ALLOCATION_HEADER_SIZE ALLOCATION_SIZE_OFFSET
 #define HEAP_START_ADDRESS (memory + sizeof(memory))
 
-#define ALLOCATION_TYPE_STRING_POINTER 1
+#define ALLOCATION_TYPE_POINTER 1
 #define ALLOCATION_TYPE_STRING 2
-#define ALLOCATION_TYPE_LIST_POINTER 3
 #define ALLOCATION_TYPE_LIST 4
 
 #define STRING_LENGTH_OFFSET 0
@@ -50,8 +49,7 @@
 #define LIST_DATA_OFFSET (STRING_LENGTH_OFFSET + 2)
 
 #define VALUE_TYPE_NUMBER 1
-#define VALUE_TYPE_STRING 2
-#define VALUE_TYPE_LIST 3
+#define VALUE_TYPE_POINTER 2
 
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
@@ -569,6 +567,28 @@ void handleResize() {
     drawDisplayBuffer();
 }
 
+int16_t getProgMemTextLength(const int8_t *text) {
+    int16_t index = 0;
+    while (true) {
+        if (pgm_read_byte(text + index) == 0) {
+            return index;
+        }
+        index += 1;
+    }
+}
+
+void readProgMemText(int8_t *destination, const int8_t *text) {
+    int16_t index = 0;
+    while (true) {
+        int8_t tempCharacter = pgm_read_byte(text + index);
+        destination[index] = tempCharacter;
+        if (tempCharacter == 0) {
+            break;
+        }
+        index += 1;
+    }
+}
+
 int8_t *allocate(int16_t size, int8_t type) {
     int8_t *tempPreviousAllocation = NULL;
     int8_t *tempNextAllocation = firstAllocation;
@@ -609,6 +629,10 @@ int8_t *allocate(int16_t size, int8_t type) {
 }
 
 void deallocate(int8_t *allocation) {
+    int8_t tempType = *(int8_t *)(allocation - ALLOCATION_TYPE_OFFSET);
+    if (tempType == ALLOCATION_TYPE_POINTER) {
+        deallocate(*(int8_t **)allocation);
+    }
     int8_t *tempPreviousAllocation = *(int8_t **)(allocation - ALLOCATION_PREVIOUS_OFFSET);
     int8_t *tempNextAllocation = *(int8_t **)(allocation - ALLOCATION_NEXT_OFFSET);
     if (tempPreviousAllocation == NULL) {
@@ -619,6 +643,21 @@ void deallocate(int8_t *allocation) {
     if (tempNextAllocation != NULL) {
         *(int8_t **)(tempNextAllocation - ALLOCATION_PREVIOUS_OFFSET) = tempPreviousAllocation;
     }
+}
+
+int8_t *createEmptyString(int16_t length) {
+    int8_t *output = allocate(sizeof(int8_t *), ALLOCATION_TYPE_POINTER);
+    int8_t *tempString = allocate(STRING_DATA_OFFSET + length + 1, ALLOCATION_TYPE_STRING);
+    *(int8_t **)output = tempString;
+    *(int16_t *)(tempString + STRING_LENGTH_OFFSET) = length;
+    return output;
+}
+
+int8_t *createStringFromProgMem(const int8_t *text) {
+    int8_t *output = createEmptyString(getProgMemTextLength(text));
+    int8_t *tempString = *(int8_t **)output;
+    readProgMemText(tempString + STRING_DATA_OFFSET, text);
+    return output;
 }
 
 int8_t getSymbolWidth(uint8_t symbol) {
@@ -674,6 +713,17 @@ void displayText(int8_t posX, int8_t posY, int8_t *text) {
     }
 }
 
+void displayTextFromProgMem(int8_t posX, int8_t posY, const int8_t *text) {
+    int8_t tempBuffer[getProgMemTextLength(text) + 1];
+    readProgMemText(tempBuffer, text);
+    displayText(posX, posY, tempBuffer);
+}
+
+void displayStringAllocation(int8_t posX, int8_t posY, int8_t *string) {
+    int8_t *tempString = *(int8_t **)string;
+    displayText(posX, posY, tempString + STRING_DATA_OFFSET);
+}
+
 void clearDisplay() {
     int32_t tempPosY = 0;
     while (tempPosY < DISPLAY_HEIGHT) {
@@ -719,9 +769,8 @@ int main(int argc, const char *argv[]) {
     handleResize();
     
     clearDisplay();
-    int8_t tempText[] = "ABC DEF";
-    tempText[3] = (uint8_t)152;
-    displayText(0, 0, tempText);
+    int8_t *tempString = createStringFromProgMem(SYMBOL_TEXT_RANDOM_INTEGER);
+    displayStringAllocation(0, 0, tempString);
     getKey();
     
     endwin();

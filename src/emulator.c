@@ -16,6 +16,7 @@
 
 #define DISPLAY_WIDTH 16
 #define DISPLAY_HEIGHT 2
+#define SYMBOL_SET_NAME_WIDTH 5
 
 #define KEY_CURSOR_LEFT 0
 #define KEY_CURSOR_RIGHT 1
@@ -427,6 +428,10 @@ const int8_t SYMBOL_SET_SIZE_LIST[] PROGMEM = {
     sizeof(SYMBOL_SET_VALUE)
 };
 
+#define SYMBOL_SET_AMOUNT (sizeof(SYMBOL_SET_LIST) / sizeof(*SYMBOL_SET_LIST))
+
+const int8_t SYMBOL_REPRESENTATION_SPACE[] PROGMEM = "(Space)";
+
 const int8_t TEST_MESSAGE_1[] PROGMEM = "TITLE";
 const int8_t TEST_MESSAGE_2[] PROGMEM = "ONE";
 const int8_t TEST_MESSAGE_3[] PROGMEM = "TWO";
@@ -453,8 +458,8 @@ int8_t memory[1500];
 int8_t *firstAllocation = NULL;
 int8_t *textEditorText;
 int16_t textEditorIndex;
-int8_t textEditorSymbolSetListIndex;
 int8_t textEditorSymbolSetIndex;
+int8_t textEditorSymbolIndex[SYMBOL_SET_AMOUNT];
 
 int8_t pgm_read_byte(const int8_t *pointer) {
     return *pointer;
@@ -991,16 +996,29 @@ static void displayTextEditorLine() {
 }
 
 static void displayTextEditorSymbolSet() {
-    clearDisplayRegion(0, 1, 5);
-    displayTextFromProgMem(0, 1, pgm_read_ptr((const void **)(SYMBOL_SET_NAME_LIST + textEditorSymbolSetListIndex)));
+    clearDisplayRegion(0, 1, SYMBOL_SET_NAME_WIDTH);
+    displayTextFromProgMem(0, 1, pgm_read_ptr((const void **)(SYMBOL_SET_NAME_LIST + textEditorSymbolSetIndex)));
+}
+
+static void displayTextEditorSymbol() {
+    clearDisplayRegion(SYMBOL_SET_NAME_WIDTH, 1, DISPLAY_WIDTH - SYMBOL_SET_NAME_WIDTH);
+    const uint8_t *tempSymbolSet = pgm_read_ptr((const void **)(SYMBOL_SET_LIST + textEditorSymbolSetIndex));
+    uint8_t tempSymbol = pgm_read_byte(tempSymbolSet + textEditorSymbolIndex[textEditorSymbolSetIndex]);
+    if (tempSymbol == ' ') {
+        displayTextFromProgMem(SYMBOL_SET_NAME_WIDTH, 1, SYMBOL_REPRESENTATION_SPACE);
+    } else {
+        displaySymbol(SYMBOL_SET_NAME_WIDTH, 1, tempSymbol);
+    }
 }
 
 static void runTextEditor() {
     displayTextEditorLine();
     displayTextEditorSymbolSet();
+    displayTextEditorSymbol();
     while (true) {
         int8_t tempKey = getKey();
         int8_t shouldDisplayTextLine = false;
+        int8_t shouldDisplaySymbol = false;
         if (tempKey == KEY_CURSOR_LEFT) {
             if (textEditorIndex > 0) {
                 uint8_t tempSymbol = textEditorText[textEditorIndex - 1];
@@ -1048,21 +1066,40 @@ static void runTextEditor() {
             shouldDisplayTextLine = true;
         }
         if (tempKey == KEY_SYMBOL_UP) {
-            textEditorSymbolSetListIndex -= 1;
-            if (textEditorSymbolSetListIndex < 0) {
-                textEditorSymbolSetListIndex = sizeof(SYMBOL_SET_LIST) / sizeof(*SYMBOL_SET_LIST);
+            textEditorSymbolSetIndex -= 1;
+            if (textEditorSymbolSetIndex < 0) {
+                textEditorSymbolSetIndex = SYMBOL_SET_AMOUNT - 1;
             }
             displayTextEditorSymbolSet();
+            shouldDisplaySymbol = true;
         }
         if (tempKey == KEY_SYMBOL_DOWN) {
-            textEditorSymbolSetListIndex += 1;
-            if (textEditorSymbolSetListIndex >= sizeof(SYMBOL_SET_LIST) / sizeof(*SYMBOL_SET_LIST)) {
-                textEditorSymbolSetListIndex = 0;
+            textEditorSymbolSetIndex += 1;
+            if (textEditorSymbolSetIndex >= SYMBOL_SET_AMOUNT) {
+                textEditorSymbolSetIndex = 0;
             }
             displayTextEditorSymbolSet();
+            shouldDisplaySymbol = true;
+        }
+        if (tempKey == KEY_SYMBOL_LEFT) {
+            textEditorSymbolIndex[textEditorSymbolSetIndex] -= 1;
+            if (textEditorSymbolIndex[textEditorSymbolSetIndex] < 0) {
+               textEditorSymbolIndex[textEditorSymbolSetIndex] = pgm_read_byte((SYMBOL_SET_SIZE_LIST + textEditorSymbolSetIndex)) - 1;
+            }
+            shouldDisplaySymbol = true;
+        }
+        if (tempKey == KEY_SYMBOL_RIGHT) {
+            textEditorSymbolIndex[textEditorSymbolSetIndex] += 1;
+            if (textEditorSymbolIndex[textEditorSymbolSetIndex] >= pgm_read_byte((SYMBOL_SET_SIZE_LIST + textEditorSymbolSetIndex))) {
+               textEditorSymbolIndex[textEditorSymbolSetIndex] = 0;
+            }
+            shouldDisplaySymbol = true;
         }
         if (shouldDisplayTextLine) {
             displayTextEditorLine();
+        }
+        if (shouldDisplaySymbol) {
+            displayTextEditorSymbol();
         }
     }
 }
@@ -1070,8 +1107,12 @@ static void runTextEditor() {
 static void initializeTextEditor(int8_t *text) {
     textEditorText = text;
     textEditorIndex = 0;
-    textEditorSymbolSetListIndex = 0;
     textEditorSymbolSetIndex = 0;
+    int8_t index = 0;
+    while (index < SYMBOL_SET_AMOUNT) {
+        textEditorSymbolIndex[index] = 0;
+        index += 1;
+    }
 }
 
 int main(int argc, const char *argv[]) {

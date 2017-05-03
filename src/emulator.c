@@ -21,10 +21,10 @@
 #define KEY_CURSOR_RIGHT 1
 #define KEY_CURSOR_UP 2
 #define KEY_CURSOR_DOWN 3
-#define KEY_CHARACTER_LEFT 4
-#define KEY_CHARACTER_RIGHT 5
-#define KEY_CHARACTER_UP 6
-#define KEY_CHARACTER_DOWN 7
+#define KEY_SYMBOL_LEFT 4
+#define KEY_SYMBOL_RIGHT 5
+#define KEY_SYMBOL_UP 6
+#define KEY_SYMBOL_DOWN 7
 #define KEY_SELECT_OPTION 8
 #define KEY_DELETE 9
 #define KEY_NEWLINE 10
@@ -393,15 +393,15 @@ const int8_t *SYMBOL_SET_LIST[] PROGMEM = {
     SYMBOL_SET_VALUE
 };
 
-const int8_t SYMBOL_SET_NAME_LETTERS[] PROGMEM = "Letter";
-const int8_t SYMBOL_SET_NAME_NUMBERS[] PROGMEM = "Number";
+const int8_t SYMBOL_SET_NAME_LETTERS[] PROGMEM = "Lett";
+const int8_t SYMBOL_SET_NAME_NUMBERS[] PROGMEM = "Num";
 const int8_t SYMBOL_SET_NAME_PUNCTUATION[] PROGMEM = "Punc";
-const int8_t SYMBOL_SET_NAME_OPERATORS[] PROGMEM = "Operate";
-const int8_t SYMBOL_SET_NAME_ASSIGNMENT[] PROGMEM = "Assign";
-const int8_t SYMBOL_SET_NAME_CONTROL[] PROGMEM = "Control";
+const int8_t SYMBOL_SET_NAME_OPERATORS[] PROGMEM = "Oper";
+const int8_t SYMBOL_SET_NAME_ASSIGNMENT[] PROGMEM = "Asgn";
+const int8_t SYMBOL_SET_NAME_CONTROL[] PROGMEM = "Ctrl";
 const int8_t SYMBOL_SET_NAME_MATH[] PROGMEM = "Math";
 const int8_t SYMBOL_SET_NAME_INPUT_OUTPUT[] PROGMEM = "I/O";
-const int8_t SYMBOL_SET_NAME_VALUE[] PROGMEM = "Value";
+const int8_t SYMBOL_SET_NAME_VALUE[] PROGMEM = "Val";
 
 const int8_t *SYMBOL_SET_NAME_LIST[] PROGMEM = {
     SYMBOL_SET_NAME_LETTERS,
@@ -453,6 +453,8 @@ int8_t memory[1500];
 int8_t *firstAllocation = NULL;
 int8_t *textEditorText;
 int16_t textEditorIndex;
+int8_t textEditorSymbolSetListIndex;
+int8_t textEditorSymbolSetIndex;
 
 int8_t pgm_read_byte(const int8_t *pointer) {
     return *pointer;
@@ -501,16 +503,16 @@ int8_t getKey() {
             return KEY_CURSOR_DOWN;
         }
         if (tempKey == 'a') {
-            return KEY_CHARACTER_LEFT;
+            return KEY_SYMBOL_LEFT;
         }
         if (tempKey == 'd') {
-            return KEY_CHARACTER_RIGHT;
+            return KEY_SYMBOL_RIGHT;
         }
         if (tempKey == 'w') {
-            return KEY_CHARACTER_UP;
+            return KEY_SYMBOL_UP;
         }
         if (tempKey == 's') {
-            return KEY_CHARACTER_DOWN;
+            return KEY_SYMBOL_DOWN;
         }
         if (tempKey == ' ') {
             return KEY_SELECT_OPTION;
@@ -988,8 +990,14 @@ static void displayTextEditorLine() {
     }
 }
 
+static void displayTextEditorSymbolSet() {
+    clearDisplayRegion(0, 1, 5);
+    displayTextFromProgMem(0, 1, pgm_read_ptr((const void **)(SYMBOL_SET_NAME_LIST + textEditorSymbolSetListIndex)));
+}
+
 static void runTextEditor() {
     displayTextEditorLine();
+    displayTextEditorSymbolSet();
     while (true) {
         int8_t tempKey = getKey();
         int8_t shouldDisplayTextLine = false;
@@ -1039,6 +1047,20 @@ static void runTextEditor() {
             }
             shouldDisplayTextLine = true;
         }
+        if (tempKey == KEY_SYMBOL_UP) {
+            textEditorSymbolSetListIndex -= 1;
+            if (textEditorSymbolSetListIndex < 0) {
+                textEditorSymbolSetListIndex = sizeof(SYMBOL_SET_LIST) / sizeof(*SYMBOL_SET_LIST);
+            }
+            displayTextEditorSymbolSet();
+        }
+        if (tempKey == KEY_SYMBOL_DOWN) {
+            textEditorSymbolSetListIndex += 1;
+            if (textEditorSymbolSetListIndex >= sizeof(SYMBOL_SET_LIST) / sizeof(*SYMBOL_SET_LIST)) {
+                textEditorSymbolSetListIndex = 0;
+            }
+            displayTextEditorSymbolSet();
+        }
         if (shouldDisplayTextLine) {
             displayTextEditorLine();
         }
@@ -1048,6 +1070,8 @@ static void runTextEditor() {
 static void initializeTextEditor(int8_t *text) {
     textEditorText = text;
     textEditorIndex = 0;
+    textEditorSymbolSetListIndex = 0;
+    textEditorSymbolSetIndex = 0;
 }
 
 int main(int argc, const char *argv[]) {

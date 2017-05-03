@@ -1009,6 +1009,36 @@ static void runTextEditor() {
                 shouldDisplayTextLine = true;
             }
         }
+        if (tempKey == KEY_CURSOR_UP) {
+            while (textEditorIndex > 0) {
+                textEditorIndex -= 1;
+                uint8_t tempSymbol = textEditorText[textEditorIndex];
+                if (tempSymbol == '\n') {
+                    break;
+                }
+            }
+            shouldDisplayTextLine = true;
+        }
+        if (tempKey == KEY_CURSOR_DOWN) {
+            while (true) {
+                uint8_t tempSymbol = textEditorText[textEditorIndex];
+                if (tempSymbol == 0) {
+                    break;
+                }
+                textEditorIndex += 1;
+                if (tempSymbol == '\n') {
+                    break;
+                }
+            }
+            while (true) {
+                uint8_t tempSymbol = textEditorText[textEditorIndex];
+                if (tempSymbol == '\n' || tempSymbol == 0) {
+                    break;
+                }
+                textEditorIndex += 1;
+            }
+            shouldDisplayTextLine = true;
+        }
         if (shouldDisplayTextLine) {
             displayTextEditorLine();
         }
@@ -1053,7 +1083,7 @@ int main(int argc, const char *argv[]) {
     handleResize();
     
     //menuFromProgMem(TEST_MESSAGE_1, TEST_MESSAGE_LIST, sizeof(TEST_MESSAGE_LIST) / sizeof(*TEST_MESSAGE_LIST));
-    int8_t tempText[100] = "HELLO\nWORLD";
+    int8_t tempText[100] = "HELLO\nWORLD\nBREAD";
     initializeTextEditor(tempText);
     runTextEditor();
     

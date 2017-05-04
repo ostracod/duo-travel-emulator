@@ -1121,6 +1121,24 @@ static void runTextEditor() {
             insertTextEditorSymbol('\n');
             shouldDisplayTextLine = true;
         }
+        if (tempKey == KEY_DELETE) {
+            if (textEditorIndex > 0) {
+                int8_t index = textEditorIndex;
+                while (true) {
+                    int8_t tempSymbol = textEditorText[index];
+                    textEditorText[index - 1] = tempSymbol;
+                    if (tempSymbol == 0) {
+                        break;
+                    }
+                    index += 1;
+                }
+                textEditorIndex -= 1;
+                shouldDisplayTextLine = true;
+            }
+        }
+        if (tempKey == KEY_ESCAPE) {
+            return;
+        }
         if (shouldDisplayTextLine) {
             displayTextEditorLine();
         }

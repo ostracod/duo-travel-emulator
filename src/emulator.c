@@ -1011,6 +1011,22 @@ static void displayTextEditorSymbol() {
     }
 }
 
+static void insertTextEditorSymbol(uint8_t symbol) {
+    int8_t index = textEditorIndex;
+    uint8_t tempLastSymbol = textEditorText[index];
+    while (true) {
+        index += 1;
+        int8_t tempNextSymbol = textEditorText[index];
+        textEditorText[index] = tempLastSymbol;
+        if (tempLastSymbol == 0) {
+            break;
+        }
+        tempLastSymbol = tempNextSymbol;
+    }
+    textEditorText[textEditorIndex] = symbol;
+    textEditorIndex += 1;
+}
+
 static void runTextEditor() {
     displayTextEditorLine();
     displayTextEditorSymbolSet();
@@ -1094,6 +1110,16 @@ static void runTextEditor() {
                textEditorSymbolIndex[textEditorSymbolSetIndex] = 0;
             }
             shouldDisplaySymbol = true;
+        }
+        if (tempKey == KEY_SELECT_OPTION) {
+            const uint8_t *tempSymbolSet = pgm_read_ptr((const void **)(SYMBOL_SET_LIST + textEditorSymbolSetIndex));
+            uint8_t tempSymbol = pgm_read_byte(tempSymbolSet + textEditorSymbolIndex[textEditorSymbolSetIndex]);
+            insertTextEditorSymbol(tempSymbol);
+            shouldDisplayTextLine = true;
+        }
+        if (tempKey == KEY_NEWLINE) {
+            insertTextEditorSymbol('\n');
+            shouldDisplayTextLine = true;
         }
         if (shouldDisplayTextLine) {
             displayTextEditorLine();

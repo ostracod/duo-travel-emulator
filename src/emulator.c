@@ -55,6 +55,16 @@
 #define VALUE_TYPE_STRING 2
 #define VALUE_TYPE_LIST 3
 
+#define FILE_NAME_MAXIMUM_LENGTH 15
+#define FILE_EXISTS_TRUE 1
+#define FILE_EXISTS_FALSE 255
+
+#define FILE_ENTRY_SIZE 1024
+#define FILE_EXISTS_OFFSET 0
+#define FILE_NAME_OFFSET (FILE_EXISTS_OFFSET + 1)
+#define FILE_SIZE_OFFSET (FILE_NAME_OFFSET + FILE_NAME_MAXIMUM_LENGTH + 1)
+#define FILE_DATA_OFFSET (FILE_SIZE_OFFSET + 2)
+
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
 const int8_t SYMBOL_TEXT_BOOLEAN_XOR[] PROGMEM = "^^";
@@ -125,6 +135,7 @@ const int8_t SYMBOL_TEXT_FILE_EXISTS[] PROGMEM = "fExists:";
 const int8_t SYMBOL_TEXT_FILE_SIZE[] PROGMEM = "fSize:";
 const int8_t SYMBOL_TEXT_FILE_CREATE[] PROGMEM = "fCreate:";
 const int8_t SYMBOL_TEXT_FILE_DELETE[] PROGMEM = "fDelete:";
+const int8_t SYMBOL_TEXT_FILE_SET_NAME[] PROGMEM = "fSetName:";
 const int8_t SYMBOL_TEXT_FILE_READ[] PROGMEM = "fRead:";
 const int8_t SYMBOL_TEXT_FILE_WRITE[] PROGMEM = "fWrite:";
 
@@ -194,6 +205,7 @@ const int8_t *SYMBOL_TEXT_LIST[] PROGMEM = {
     SYMBOL_TEXT_FILE_SIZE,
     SYMBOL_TEXT_FILE_CREATE,
     SYMBOL_TEXT_FILE_DELETE,
+    SYMBOL_TEXT_FILE_SET_NAME,
     SYMBOL_TEXT_FILE_READ,
     SYMBOL_TEXT_FILE_WRITE
 };
@@ -263,8 +275,9 @@ const int8_t *SYMBOL_TEXT_LIST[] PROGMEM = {
 #define SYMBOL_FILE_SIZE 190
 #define SYMBOL_FILE_CREATE 191
 #define SYMBOL_FILE_DELETE 192
-#define SYMBOL_FILE_READ 193
-#define SYMBOL_FILE_WRITE 194
+#define SYMBOL_FILE_SET_NAME 193
+#define SYMBOL_FILE_READ 194
+#define SYMBOL_FILE_WRITE 195
 
 const int8_t SYMBOL_SET_LETTERS[] PROGMEM = {
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
@@ -367,6 +380,7 @@ const uint8_t SYMBOL_SET_INPUT_OUTPUT[] PROGMEM = {
     SYMBOL_FILE_SIZE,
     SYMBOL_FILE_CREATE,
     SYMBOL_FILE_DELETE,
+    SYMBOL_FILE_SET_NAME,
     SYMBOL_FILE_READ,
     SYMBOL_FILE_WRITE,
 };
@@ -1171,6 +1185,61 @@ static void initializeTextEditor(int8_t *text) {
         textEditorSymbolIndex[index] = 0;
         index += 1;
     }
+}
+
+static int32_t fileFindByName(int8_t *name) {
+    int32_t address = 0;
+    while (address < STORAGE_SIZE) {
+        uint8_t tempExists;
+        readStorage(&tempExists, address + FILE_EXISTS_OFFSET, 1);
+        if (tempExists == FILE_EXISTS_TRUE) {
+            int8_t tempName[FILE_NAME_MAXIMUM_LENGTH + 1];
+            readStorage(tempName, address + FILE_NAME_OFFSET, sizeof(tempName));
+            if (strcmp(tempName, name) == 0) {
+                return address;
+            }
+        }
+        address += FILE_ENTRY_SIZE;
+    }
+    return -1;
+}
+
+static int32_t fileCreate(int8_t *name) {
+    int32_t address = 0;
+    while (address < STORAGE_SIZE) {
+        uint8_t tempExists;
+        readStorage(&tempExists, address + FILE_EXISTS_OFFSET, 1);
+        if (tempExists == FILE_EXISTS_FALSE) {
+            tempExists = FILE_EXISTS_TRUE;
+            writeStorage(address + FILE_EXISTS_OFFSET, &tempExists, 1);
+            writeStorage(address + FILE_NAME_OFFSET, name, strlen(name) + 1);
+            int16_t tempSize = 0;
+            int8_t tempData = 0;
+            writeStorage(address + FILE_SIZE_OFFSET, &tempSize, 2);
+            writeStorage(address + FILE_DATA_OFFSET, &tempData, 1);
+            return address;
+        }
+        address += FILE_ENTRY_SIZE;
+    }
+    return -1;
+}
+
+static int8_t *fileRead(int32_t address, int16_t index, int16_t amount) {
+    int16_t tempSize;
+    readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
+    if (index < 0 || index + amount > tempSize) {
+        return NULL;
+    }
+    int8_t *output = createEmptyString(amount);
+    int8_t *tempString = *(int8_t **)output;
+    readStorage(tempString + STRING_DATA_OFFSET, address + FILE_DATA_OFFSET + index, amount);
+    return output;
+}
+
+static void fileWrite(int32_t address, int8_t *text) {
+    int16_t tempSize = strlen(text);
+    writeStorage(address + FILE_SIZE_OFFSET, &tempSize, 2);
+    writeStorage(address + FILE_DATA_OFFSET, text, tempSize + 1);
 }
 
 int main(int argc, const char *argv[]) {

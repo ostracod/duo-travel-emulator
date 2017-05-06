@@ -3,3 +3,4 @@ build
 *.dSYM
 .DS_store
 *.o
+storage.dat

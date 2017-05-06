@@ -18,6 +18,8 @@
 #define DISPLAY_HEIGHT 2
 #define SYMBOL_SET_NAME_WIDTH 5
 
+#define STORAGE_SIZE ((int32_t)256 * (int32_t)128)
+
 #define KEY_CURSOR_LEFT 0
 #define KEY_CURSOR_RIGHT 1
 #define KEY_CURSOR_UP 2
@@ -453,6 +455,8 @@ WINDOW *window;
 int32_t windowWidth;
 int32_t windowHeight;
 int8_t displayBuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
+int8_t storageFilePath[] = "./storage.dat";
+FILE *storageFile;
 
 int8_t memory[1500];
 int8_t *firstAllocation = NULL;
@@ -587,6 +591,16 @@ void handleResize() {
     windowHeight = tempHeight;
     drawBackground();
     drawDisplayBuffer();
+}
+
+void readStorage(void *destination, int32_t address, int32_t amount) {
+    fseek(storageFile, address, SEEK_SET);
+    fread(destination, 1, amount, storageFile);
+}
+
+void writeStorage(int32_t address, void *source, int32_t amount) {
+    fseek(storageFile, address, SEEK_SET);
+    fwrite(source, 1, amount, storageFile);
 }
 
 static int16_t getProgMemTextLength(const int8_t *text) {
@@ -1174,6 +1188,20 @@ int main(int argc, const char *argv[]) {
     printf("%ld\n", tempAllocation4 - memory);
     return 0;
     */
+    
+    
+    storageFile = fopen(storageFilePath, "r+");
+    if (storageFile == NULL) {
+        storageFile = fopen(storageFilePath, "w");
+        int8_t tempData = 0xFF;
+        int32_t tempCount = 0;
+        while (tempCount < STORAGE_SIZE) {
+            fwrite(&tempData, 1, 1, storageFile);
+            tempCount += 1;
+        }
+        fclose(storageFile);
+        storageFile = fopen(storageFilePath, "r+");
+    }
     
     int8_t index = 0;
     while (index < DISPLAY_WIDTH * DISPLAY_HEIGHT) {

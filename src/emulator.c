@@ -478,6 +478,7 @@ int8_t *textEditorText;
 int16_t textEditorIndex;
 int8_t textEditorSymbolSetIndex;
 int8_t textEditorSymbolIndex[SYMBOL_SET_AMOUNT];
+int8_t textEditorNumberOnly;
 
 int8_t pgm_read_byte(const int8_t *pointer) {
     return *pointer;
@@ -1110,20 +1111,24 @@ static void runTextEditor() {
             shouldDisplayTextLine = true;
         }
         if (tempKey == KEY_SYMBOL_UP) {
-            textEditorSymbolSetIndex -= 1;
-            if (textEditorSymbolSetIndex < 0) {
-                textEditorSymbolSetIndex = SYMBOL_SET_AMOUNT - 1;
+            if (!textEditorNumberOnly) {
+                textEditorSymbolSetIndex -= 1;
+                if (textEditorSymbolSetIndex < 0) {
+                    textEditorSymbolSetIndex = SYMBOL_SET_AMOUNT - 1;
+                }
+                displayTextEditorSymbolSet();
+                shouldDisplaySymbol = true;
             }
-            displayTextEditorSymbolSet();
-            shouldDisplaySymbol = true;
         }
         if (tempKey == KEY_SYMBOL_DOWN) {
-            textEditorSymbolSetIndex += 1;
-            if (textEditorSymbolSetIndex >= SYMBOL_SET_AMOUNT) {
-                textEditorSymbolSetIndex = 0;
+            if (!textEditorNumberOnly) {
+                textEditorSymbolSetIndex += 1;
+                if (textEditorSymbolSetIndex >= SYMBOL_SET_AMOUNT) {
+                    textEditorSymbolSetIndex = 0;
+                }
+                displayTextEditorSymbolSet();
+                shouldDisplaySymbol = true;
             }
-            displayTextEditorSymbolSet();
-            shouldDisplaySymbol = true;
         }
         if (tempKey == KEY_SYMBOL_LEFT) {
             textEditorSymbolIndex[textEditorSymbolSetIndex] -= 1;
@@ -1176,10 +1181,15 @@ static void runTextEditor() {
     }
 }
 
-static void initializeTextEditor(int8_t *text) {
+static void initializeTextEditor(int8_t *text, int8_t numbersOnly) {
     textEditorText = text;
     textEditorIndex = 0;
-    textEditorSymbolSetIndex = 0;
+    textEditorNumberOnly = numbersOnly;
+    if (numbersOnly) {
+        textEditorSymbolSetIndex = 1;
+    } else {
+        textEditorSymbolSetIndex = 0;
+    }
     int8_t index = 0;
     while (index < SYMBOL_SET_AMOUNT) {
         textEditorSymbolIndex[index] = 0;
@@ -1290,7 +1300,7 @@ int main(int argc, const char *argv[]) {
     
     //menuFromProgMem(TEST_MESSAGE_1, TEST_MESSAGE_LIST, sizeof(TEST_MESSAGE_LIST) / sizeof(*TEST_MESSAGE_LIST));
     int8_t tempText[100] = "HELLO\nWORLD\nBREAD";
-    initializeTextEditor(tempText);
+    initializeTextEditor(tempText, true);
     runTextEditor();
     
     endwin();

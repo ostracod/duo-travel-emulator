@@ -505,6 +505,8 @@ int8_t memory[1500];
 int8_t *firstAllocation = NULL;
 int8_t *textEditorText;
 int16_t textEditorIndex;
+int16_t textEditorLength;
+int16_t textEditorMaximumLength;
 int8_t textEditorSymbolSetIndex;
 int8_t textEditorSymbolIndex[SYMBOL_SET_AMOUNT];
 int8_t textEditorNumberOnly;
@@ -1026,7 +1028,7 @@ static void displayTextEditorLine() {
     clearDisplayRegion(0, 0, DISPLAY_WIDTH);
     int8_t tempCursorPosX = DISPLAY_WIDTH / 2;
     displayCharacter(tempCursorPosX, 0, '_');
-    int8_t tempIndex = textEditorIndex;
+    int16_t tempIndex = textEditorIndex;
     int8_t tempPosX = tempCursorPosX + 1;
     while (true) {
         if (tempPosX >= DISPLAY_WIDTH) {
@@ -1075,7 +1077,10 @@ static void displayTextEditorSymbol() {
     }
 }
 
-static void insertTextEditorSymbol(uint8_t symbol) {
+static int8_t insertTextEditorSymbol(uint8_t symbol) {
+    if (textEditorLength >= textEditorMaximumLength) {
+        return false;
+    }
     int16_t index = textEditorIndex;
     uint8_t tempLastSymbol = textEditorText[index];
     while (true) {
@@ -1089,6 +1094,8 @@ static void insertTextEditorSymbol(uint8_t symbol) {
     }
     textEditorText[textEditorIndex] = symbol;
     textEditorIndex += 1;
+    textEditorLength += 1;
+    return true;
 }
 
 static void clearTextEditorLine() {
@@ -1108,23 +1115,25 @@ static void clearTextEditorLine() {
         }
         tempEndIndex += 1;
     }
-    int16_t tempOffset = tempEndIndex - tempStartIndex;
+    int16_t tempLength = tempEndIndex - tempStartIndex;
     int16_t index = tempEndIndex;
     while (true) {
         uint8_t tempSymbol = textEditorText[index];
-        textEditorText[index - tempOffset] = tempSymbol;
+        textEditorText[index - tempLength] = tempSymbol;
         if (tempSymbol == 0) {
             break;
         }
         index += 1;
     }
     textEditorIndex = tempStartIndex;
+    textEditorLength -= tempLength;
 }
 
 static int8_t runTextEditor() {
     displayTextEditorLine();
     displayTextEditorSymbolSet();
     displayTextEditorSymbol();
+    textEditorLength = strlen(textEditorText);
     while (true) {
         int8_t tempKey = getKey();
         int8_t shouldDisplayTextLine = false;
@@ -1212,12 +1221,16 @@ static int8_t runTextEditor() {
         if (tempKey == KEY_SELECT_OPTION) {
             const uint8_t *tempSymbolSet = pgm_read_ptr((const void **)(SYMBOL_SET_LIST + textEditorSymbolSetIndex));
             uint8_t tempSymbol = pgm_read_byte(tempSymbolSet + textEditorSymbolIndex[textEditorSymbolSetIndex]);
-            insertTextEditorSymbol(tempSymbol);
-            shouldDisplayTextLine = true;
+            int8_t tempResult = insertTextEditorSymbol(tempSymbol);
+            if (tempResult) {
+                shouldDisplayTextLine = true;
+            }
         }
         if (tempKey == KEY_NEWLINE) {
-            insertTextEditorSymbol('\n');
-            shouldDisplayTextLine = true;
+            int8_t tempResult = insertTextEditorSymbol('\n');
+            if (tempResult) {
+                shouldDisplayTextLine = true;
+            }
         }
         if (tempKey == KEY_DELETE) {
             if (textEditorIndex > 0) {
@@ -1231,6 +1244,7 @@ static int8_t runTextEditor() {
                     index += 1;
                 }
                 textEditorIndex -= 1;
+                textEditorLength -= 1;
                 shouldDisplayTextLine = true;
             }
         }
@@ -1253,9 +1267,10 @@ static int8_t runTextEditor() {
     }
 }
 
-static void initializeTextEditor(int8_t *text, int8_t numbersOnly) {
+static void initializeTextEditor(int8_t *text, int16_t maximumLength, int8_t numbersOnly) {
     textEditorText = text;
     textEditorIndex = 0;
+    textEditorMaximumLength = maximumLength;
     textEditorNumberOnly = numbersOnly;
     if (numbersOnly) {
         textEditorSymbolSetIndex = 1;
@@ -1371,8 +1386,8 @@ int main(int argc, const char *argv[]) {
     handleResize();
     
     //menuFromProgMem(TEST_MESSAGE_1, TEST_MESSAGE_LIST, sizeof(TEST_MESSAGE_LIST) / sizeof(*TEST_MESSAGE_LIST));
-    int8_t tempText[100] = "HELLO\nWORLD\nBREAD";
-    initializeTextEditor(tempText, false);
+    int8_t tempText[100] = "";
+    initializeTextEditor(tempText, 10, false);
     runTextEditor();
     
     endwin();

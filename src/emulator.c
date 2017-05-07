@@ -1363,6 +1363,23 @@ static void promptCreateFile() {
     printTextFromProgMem(MESSAGE_FILE_CREATED);
 }
 
+static void promptRenameFile(int32_t address) {
+    int8_t tempResult;
+    tempResult = printTextFromProgMem(MESSAGE_ENTER_NEW_NAME);
+    if (!tempResult) {
+        return;
+    }
+    int8_t tempName[FILE_NAME_MAXIMUM_LENGTH + 1];
+    tempName[0] = 0;
+    initializeTextEditor(tempName, FILE_NAME_MAXIMUM_LENGTH, false);
+    tempResult = runTextEditor();
+    if (!tempResult) {
+        return;
+    }
+    writeStorage(address + FILE_NAME_OFFSET, tempName, FILE_NAME_MAXIMUM_LENGTH + 1);
+    printTextFromProgMem(MESSAGE_FILE_RENAMED);
+}
+
 static int8_t promptDeleteFile(int32_t address) {
     int8_t tempResult = menuFromProgMem(MENU_TITLE_FILE_DELETE, MENU_FILE_DELETE, sizeof(MENU_FILE_DELETE) / sizeof(*MENU_FILE_DELETE));
     if (tempResult == 1) {
@@ -1396,8 +1413,7 @@ static void promptFileAction(int32_t address) {
             
         }
         if (tempResult == 2) {
-            // TODO: Rename file.
-            
+            promptRenameFile(address);
         }
         if (tempResult == 3) {
             int8_t tempResult = promptDeleteFile(address);
@@ -1454,7 +1470,7 @@ static void mainMenu() {
         deallocate(tempList);
         if (tempResult == 0) {
             promptCreateFile();
-        } else {
+        } else if (tempResult > 0) {
             int8_t index = 1;
             tempAddress = 0;
             while (tempAddress < STORAGE_SIZE) {

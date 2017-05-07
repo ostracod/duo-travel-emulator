@@ -1292,38 +1292,38 @@ static void initializeTextEditor(int8_t *text, int16_t maximumLength, int8_t num
 }
 
 static int32_t fileFindByName(int8_t *name) {
-    int32_t address = 0;
-    while (address < STORAGE_SIZE) {
+    int32_t tempAddress = 0;
+    while (tempAddress < STORAGE_SIZE) {
         uint8_t tempExists;
-        readStorage(&tempExists, address + FILE_EXISTS_OFFSET, 1);
+        readStorage(&tempExists, tempAddress + FILE_EXISTS_OFFSET, 1);
         if (tempExists == FILE_EXISTS_TRUE) {
             int8_t tempName[FILE_NAME_MAXIMUM_LENGTH + 1];
-            readStorage(tempName, address + FILE_NAME_OFFSET, sizeof(tempName));
+            readStorage(tempName, tempAddress + FILE_NAME_OFFSET, sizeof(tempName));
             if (strcmp(tempName, name) == 0) {
-                return address;
+                return tempAddress;
             }
         }
-        address += FILE_ENTRY_SIZE;
+        tempAddress += FILE_ENTRY_SIZE;
     }
     return -1;
 }
 
 static int32_t fileCreate(int8_t *name) {
-    int32_t address = 0;
-    while (address < STORAGE_SIZE) {
+    int32_t tempAddress = 0;
+    while (tempAddress < STORAGE_SIZE) {
         uint8_t tempExists;
-        readStorage(&tempExists, address + FILE_EXISTS_OFFSET, 1);
+        readStorage(&tempExists, tempAddress + FILE_EXISTS_OFFSET, 1);
         if (tempExists == FILE_EXISTS_FALSE) {
             tempExists = FILE_EXISTS_TRUE;
-            writeStorage(address + FILE_EXISTS_OFFSET, &tempExists, 1);
-            writeStorage(address + FILE_NAME_OFFSET, name, strlen(name) + 1);
+            writeStorage(tempAddress + FILE_EXISTS_OFFSET, &tempExists, 1);
+            writeStorage(tempAddress + FILE_NAME_OFFSET, name, strlen(name) + 1);
             int16_t tempSize = 0;
             int8_t tempData = 0;
-            writeStorage(address + FILE_SIZE_OFFSET, &tempSize, 2);
-            writeStorage(address + FILE_DATA_OFFSET, &tempData, 1);
-            return address;
+            writeStorage(tempAddress + FILE_SIZE_OFFSET, &tempSize, 2);
+            writeStorage(tempAddress + FILE_DATA_OFFSET, &tempData, 1);
+            return tempAddress;
         }
-        address += FILE_ENTRY_SIZE;
+        tempAddress += FILE_ENTRY_SIZE;
     }
     return -1;
 }
@@ -1344,6 +1344,23 @@ static void fileWrite(int32_t address, int8_t *text) {
     int16_t tempSize = strlen(text);
     writeStorage(address + FILE_SIZE_OFFSET, &tempSize, 2);
     writeStorage(address + FILE_DATA_OFFSET, text, tempSize + 1);
+}
+
+static void promptCreateFile() {
+    int8_t tempResult;
+    tempResult = printTextFromProgMem(MESSAGE_ENTER_NAME);
+    if (!tempResult) {
+        return;
+    }
+    int8_t tempName[FILE_NAME_MAXIMUM_LENGTH + 1];
+    tempName[0] = 0;
+    initializeTextEditor(tempName, FILE_NAME_MAXIMUM_LENGTH, false);
+    tempResult = runTextEditor();
+    if (!tempResult) {
+        return;
+    }
+    fileCreate(tempName);
+    printTextFromProgMem(MESSAGE_FILE_CREATED);
 }
 
 static void mainMenu() {
@@ -1390,8 +1407,7 @@ static void mainMenu() {
     }
     deallocate(tempList);
     if (tempResult == 0) {
-        // TODO: Create file.
-        
+        promptCreateFile();
     } else {
         int8_t index = 1;
         tempAddress = 0;

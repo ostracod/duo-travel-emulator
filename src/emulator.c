@@ -477,8 +477,8 @@ const int8_t *MENU_TEXT_EDITOR[] PROGMEM = {
 };
 
 const int8_t *MENU_FILE_DELETE[] PROGMEM = {
-    MENU_OPTION_YES_DELETE,
-    MENU_OPTION_NO_DELETE
+    MENU_OPTION_NO_DELETE,
+    MENU_OPTION_YES_DELETE
 };
 
 const int8_t MESSAGE_ENTER_NAME[] PROGMEM = "Enter file name.";
@@ -1363,6 +1363,17 @@ static void promptCreateFile() {
     printTextFromProgMem(MESSAGE_FILE_CREATED);
 }
 
+static int8_t promptDeleteFile(int32_t address) {
+    int8_t tempResult = menuFromProgMem(MENU_TITLE_FILE_DELETE, MENU_FILE_DELETE, sizeof(MENU_FILE_DELETE) / sizeof(*MENU_FILE_DELETE));
+    if (tempResult == 1) {
+        uint8_t tempExists = FILE_EXISTS_FALSE;
+        writeStorage(address + FILE_EXISTS_OFFSET, &tempExists, 1);
+        printTextFromProgMem(MESSAGE_FILE_DELETED);
+        return true;
+    }
+    return false;
+}
+
 static void promptFileAction(int32_t address) {
     while (true) {
         int8_t tempResult;
@@ -1376,7 +1387,24 @@ static void promptFileAction(int32_t address) {
         if (tempResult < 0) {
             break;
         }
-        
+        if (tempResult == 0) {
+            // TODO: Run program.
+            
+        }
+        if (tempResult == 1) {
+            // TODO: Edit file.
+            
+        }
+        if (tempResult == 2) {
+            // TODO: Rename file.
+            
+        }
+        if (tempResult == 3) {
+            int8_t tempResult = promptDeleteFile(address);
+            if (tempResult) {
+                break;
+            }
+        }
     }
 }
 

@@ -40,8 +40,8 @@
 #define ALLOCATION_SIZE_OFFSET (ALLOCATION_NEXT_OFFSET + 2)
 #define ALLOCATION_TYPE_OFFSET (ALLOCATION_SIZE_OFFSET + 1)
 #define ALLOCATION_IS_REACHABLE_OFFSET (ALLOCATION_TYPE_OFFSET + 1)
-#define ALLOCATION_HEADER_SIZE ALLOCATION_SIZE_OFFSET
-#define HEAP_START_ADDRESS (memory + sizeof(memory))
+#define ALLOCATION_HEADER_SIZE ALLOCATION_IS_REACHABLE_OFFSET
+#define HEAP_START_ADDRESS heapSpace
 
 #define ALLOCATION_TYPE_POINTER 1
 #define ALLOCATION_TYPE_STRING 2
@@ -282,6 +282,136 @@ const int8_t *SYMBOL_TEXT_LIST[] PROGMEM = {
 #define SYMBOL_FILE_READ 194
 #define SYMBOL_FILE_WRITE 195
 
+const int8_t UNARY_OPERATOR_LIST[] = {
+    '-',
+    SYMBOL_INCREMENT,
+    SYMBOL_DECREMENT,
+    '!',
+    '~'
+};
+
+const int8_t BINARY_OPERATOR_LIST[] = {
+    '*',
+    '/',
+    '%',
+    '+',
+    '-',
+    SYMBOL_BITSHIFT_LEFT,
+    SYMBOL_BITSHIFT_RIGHT,
+    '>',
+    '<',
+    SYMBOL_GREATER_OR_EQUAL,
+    SYMBOL_LESS_OR_EQUAL,
+    SYMBOL_EQUAL,
+    SYMBOL_NOT_EQUAL,
+    '&',
+    '^',
+    '|',
+    SYMBOL_BOOLEAN_AND,
+    SYMBOL_BOOLEAN_XOR,
+    SYMBOL_BOOLEAN_OR,
+    '=',
+    SYMBOL_ADD_ASSIGN,
+    SYMBOL_SUBTRACT_ASSIGN,
+    SYMBOL_MULTIPLY_ASSIGN,
+    SYMBOL_DIVIDE_ASSIGN,
+    SYMBOL_MODULUS_ASSIGN,
+    SYMBOL_BOOLEAN_AND_ASSIGN,
+    SYMBOL_BOOLEAN_OR_ASSIGN,
+    SYMBOL_BOOLEAN_XOR_ASSIGN,
+    SYMBOL_BITWISE_AND_ASSIGN,
+    SYMBOL_BITWISE_OR_ASSIGN,
+    SYMBOL_BITWISE_XOR_ASSIGN,
+    SYMBOL_BITSHIFT_LEFT_ASSIGN,
+    SYMBOL_BITSHIFT_RIGHT_ASSIGN,
+};
+
+const int8_t BINARY_OPERATOR_PRECEDENCE_LIST[] = {
+    1, // '*'
+    1, // '/'
+    1, // '%'
+    2, // '+'
+    2, // '-'
+    3, // SYMBOL_BITSHIFT_LEFT
+    3, // SYMBOL_BITSHIFT_RIGHT
+    4, // '>'
+    4, // '<'
+    4, // SYMBOL_GREATER_OR_EQUAL
+    4, // SYMBOL_LESS_OR_EQUAL
+    5, // SYMBOL_EQUAL
+    5, // SYMBOL_NOT_EQUAL
+    6, // '&'
+    7, // '^'
+    8, // '|'
+    9, // SYMBOL_BOOLEAN_AND
+    10, // SYMBOL_BOOLEAN_XOR
+    11, // SYMBOL_BOOLEAN_OR
+    12, // '='
+    12, // SYMBOL_ADD_ASSIGN
+    12, // SYMBOL_SUBTRACT_ASSIGN
+    12, // SYMBOL_MULTIPLY_ASSIGN
+    12, // SYMBOL_DIVIDE_ASSIGN
+    12, // SYMBOL_MODULUS_ASSIGN
+    12, // SYMBOL_BOOLEAN_AND_ASSIGN
+    12, // SYMBOL_BOOLEAN_OR_ASSIGN
+    12, // SYMBOL_BOOLEAN_XOR_ASSIGN
+    12, // SYMBOL_BITWISE_AND_ASSIGN
+    12, // SYMBOL_BITWISE_OR_ASSIGN
+    12, // SYMBOL_BITWISE_XOR_ASSIGN
+    12, // SYMBOL_BITSHIFT_LEFT_ASSIGN
+    12 // SYMBOL_BITSHIFT_RIGHT_ASSIGN
+};
+
+#define FIRST_FUNCTION_SYMBOL SYMBOL_IF
+#define LAST_FUNCTION_SYMBOL SYMBOL_FILE_WRITE
+
+const int8_t FUNCTION_ARGUMENT_AMOUNT_LIST[] = {
+    1, // SYMBOL_IF
+    1, // SYMBOL_ELSE_IF
+    0, // SYMBOL_ELSE
+    0, // SYMBOL_END
+    1, // SYMBOL_WHILE
+    0, // SYMBOL_BREAK
+    0, // SYMBOL_CONTINUE
+    -1, // SYMBOL_FUNCTION
+    1, // SYMBOL_RETURN_WITH_VALUE
+    0, // SYMBOL_RETURN
+    0, // SYMBOL_QUIT
+    0, // SYMBOL_RANDOM
+    2, // SYMBOL_RANDOM_INTEGER
+    1, // SYMBOL_ABSOLUTE_VALUE
+    1, // SYMBOL_ROUND
+    1, // SYMBOL_FLOOR
+    1, // SYMBOL_CEILING
+    1, // SYMBOL_SINE
+    1, // SYMBOL_COSINE
+    1, // SYMBOL_TANGENT
+    1, // SYMBOL_SQUARE_ROOT
+    2, // SYMBOL_POWER
+    2, // SYMBOL_LOG
+    1, // SYMBOL_NUMBER
+    1, // SYMBOL_STRING
+    1, // SYMBOL_TYPE
+    1, // SYMBOL_LENGTH
+    1, // SYMBOL_COPY
+    3, // SYMBOL_INSERT
+    2, // SYMBOL_REMOVE
+    3, // SYMBOL_SUBSEQUENCE
+    3, // SYMBOL_INSERT_SUBSEQUENCE
+    3, // SYMBOL_REMOVE_SUBSEQUENCE
+    1, // SYMBOL_PRINT
+    0, // SYMBOL_REQUEST_STRING
+    0, // SYMBOL_REQUEST_NUMBER
+    2, // SYMBOL_TEXT_MENU
+    1, // SYMBOL_FILE_EXISTS
+    1, // SYMBOL_FILE_SIZE
+    1, // SYMBOL_FILE_CREATE
+    1, // SYMBOL_FILE_DELETE
+    2, // SYMBOL_FILE_SET_NAME
+    3, // SYMBOL_FILE_READ
+    2 // SYMBOL_FILE_WRITE
+};
+
 const uint8_t SYMBOL_SET_LETTERS[] PROGMEM = {
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
     'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
@@ -501,8 +631,8 @@ int32_t windowHeight;
 int8_t displayBuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 int8_t storageFilePath[] = "./storage.dat";
 FILE *storageFile;
+int8_t heapSpace[1000];
 
-int8_t memory[1500];
 int8_t *firstAllocation = NULL;
 int8_t *textEditorText;
 int16_t textEditorIndex;
@@ -687,16 +817,16 @@ static int8_t *allocate(int16_t size, int8_t type) {
         if (tempPreviousAllocation == NULL) {
             tempAddress = HEAP_START_ADDRESS;
         } else {
-            tempAddress = tempPreviousAllocation - ALLOCATION_HEADER_SIZE;
+            int16_t tempAllocationSize = *(int16_t *)(tempPreviousAllocation - ALLOCATION_SIZE_OFFSET);
+            tempAddress = tempPreviousAllocation + tempAllocationSize;
         }
         if (tempNextAllocation == NULL) {
-            output = tempAddress - size;
+            output = tempAddress + ALLOCATION_HEADER_SIZE;
             break;
         }
-        int16_t tempAllocationSize = *(int16_t *)(tempNextAllocation - ALLOCATION_SIZE_OFFSET);
-        int16_t tempGapSize = (tempAddress - tempNextAllocation) - tempAllocationSize;
+        int16_t tempGapSize = (tempNextAllocation - ALLOCATION_HEADER_SIZE) - tempAddress;
         if (tempGapSize >= size + ALLOCATION_HEADER_SIZE) {
-            output = tempAddress - size;
+            output = tempAddress + ALLOCATION_HEADER_SIZE;
             break;
         }
         tempPreviousAllocation = tempNextAllocation;
@@ -1392,11 +1522,20 @@ static int8_t promptDeleteFile(int32_t address) {
     return false;
 }
 
+static void runFile(int32_t address) {
+    int16_t tempSize;
+    readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
+    int8_t *tempCode = alloca(tempSize + 1);
+    readStorage(tempCode, address + FILE_DATA_OFFSET, tempSize + 1);
+    
+}
+
 static void editFile(int32_t address) {
     int16_t tempSize;
     readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
-    readStorage(memory, address + FILE_DATA_OFFSET, tempSize + 1);
-    initializeTextEditor(memory, FILE_MAXIMUM_SIZE, false);
+    int8_t *tempText = alloca(tempSize + 1);
+    readStorage(tempText, address + FILE_DATA_OFFSET, tempSize + 1);
+    initializeTextEditor(tempText, FILE_MAXIMUM_SIZE, false);
     while (true) {
         runTextEditor();
         int8_t tempShouldQuitEditor = false;
@@ -1408,9 +1547,9 @@ static void editFile(int32_t address) {
             if (tempResult == 0) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_SAVING);
-                tempSize = strlen(memory);
+                tempSize = strlen(tempText);
                 writeStorage(address + FILE_SIZE_OFFSET, &tempSize, 2);
-                writeStorage(address + FILE_DATA_OFFSET, memory, tempSize + 1);
+                writeStorage(address + FILE_DATA_OFFSET, tempText, tempSize + 1);
                 printTextFromProgMem(MESSAGE_FILE_SAVED);
             }
             if (tempResult == 1) {
@@ -1438,8 +1577,7 @@ static void promptFileAction(int32_t address) {
             break;
         }
         if (tempResult == 0) {
-            // TODO: Run program.
-            
+            runFile(address);
         }
         if (tempResult == 1) {
             editFile(address);
@@ -1522,21 +1660,20 @@ static void mainMenu() {
 }
 
 int main(int argc, const char *argv[]) {
-    
+
     // TEST CODE.
     /*
     int8_t *tempAllocation1 = allocate(30, 0);
     int8_t *tempAllocation2 = allocate(30, 0);
     int8_t *tempAllocation3 = allocate(30, 0);
     deallocate(tempAllocation2);
-    int8_t *tempAllocation4 = allocate(40, 0);
-    printf("%ld\n", tempAllocation1 - memory);
-    printf("%ld\n", tempAllocation2 - memory);
-    printf("%ld\n", tempAllocation3 - memory);
-    printf("%ld\n", tempAllocation4 - memory);
+    int8_t *tempAllocation4 = allocate(20, 0);
+    printf("%ld\n", tempAllocation1 - heapSpace);
+    printf("%ld\n", tempAllocation2 - heapSpace);
+    printf("%ld\n", tempAllocation3 - heapSpace);
+    printf("%ld\n", tempAllocation4 - heapSpace);
     return 0;
     */
-    
     
     storageFile = fopen(storageFilePath, "r+");
     if (storageFile == NULL) {

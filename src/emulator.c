@@ -33,6 +33,7 @@
 #define KEY_NEWLINE 10
 #define KEY_ESCAPE 11
 #define KEY_FINISHED 12
+#define KEY_CLEAR_LINE 13
 
 #define ALLOCATION_PREVIOUS_OFFSET sizeof(int8_t *)
 #define ALLOCATION_NEXT_OFFSET (ALLOCATION_PREVIOUS_OFFSET + sizeof(int8_t *))
@@ -581,6 +582,9 @@ int8_t getKey() {
         if (tempKey == 'f') {
             return KEY_FINISHED;
         }
+        if (tempKey == 'c') {
+            return KEY_CLEAR_LINE;
+        }
     }
 }
 
@@ -1072,7 +1076,7 @@ static void displayTextEditorSymbol() {
 }
 
 static void insertTextEditorSymbol(uint8_t symbol) {
-    int8_t index = textEditorIndex;
+    int16_t index = textEditorIndex;
     uint8_t tempLastSymbol = textEditorText[index];
     while (true) {
         index += 1;
@@ -1085,6 +1089,36 @@ static void insertTextEditorSymbol(uint8_t symbol) {
     }
     textEditorText[textEditorIndex] = symbol;
     textEditorIndex += 1;
+}
+
+static void clearTextEditorLine() {
+    int16_t tempStartIndex = textEditorIndex;
+    int16_t tempEndIndex = textEditorIndex;
+    while (tempStartIndex > 0) {
+        uint8_t tempSymbol = textEditorText[tempStartIndex - 1];
+        if (tempSymbol == '\n') {
+            break;
+        }
+        tempStartIndex -= 1;
+    }
+    while (true) {
+        uint8_t tempSymbol = textEditorText[tempEndIndex];
+        if (tempSymbol == '\n' || tempSymbol == 0) {
+            break;
+        }
+        tempEndIndex += 1;
+    }
+    int16_t tempOffset = tempEndIndex - tempStartIndex;
+    int16_t index = tempEndIndex;
+    while (true) {
+        uint8_t tempSymbol = textEditorText[index];
+        textEditorText[index - tempOffset] = tempSymbol;
+        if (tempSymbol == 0) {
+            break;
+        }
+        index += 1;
+    }
+    textEditorIndex = tempStartIndex;
 }
 
 static int8_t runTextEditor() {
@@ -1199,6 +1233,10 @@ static int8_t runTextEditor() {
                 textEditorIndex -= 1;
                 shouldDisplayTextLine = true;
             }
+        }
+        if (tempKey == KEY_CLEAR_LINE) {
+            clearTextEditorLine();
+            shouldDisplayTextLine = true;
         }
         if (tempKey == KEY_FINISHED) {
             return true;
@@ -1334,7 +1372,7 @@ int main(int argc, const char *argv[]) {
     
     //menuFromProgMem(TEST_MESSAGE_1, TEST_MESSAGE_LIST, sizeof(TEST_MESSAGE_LIST) / sizeof(*TEST_MESSAGE_LIST));
     int8_t tempText[100] = "HELLO\nWORLD\nBREAD";
-    initializeTextEditor(tempText, true);
+    initializeTextEditor(tempText, false);
     runTextEditor();
     
     endwin();

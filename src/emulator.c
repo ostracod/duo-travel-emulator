@@ -1363,67 +1363,85 @@ static void promptCreateFile() {
     printTextFromProgMem(MESSAGE_FILE_CREATED);
 }
 
-static void mainMenu() {
-    int8_t tempFileAmount = 0;
-    int32_t tempAddress = 0;
-    while (tempAddress < STORAGE_SIZE) {
-        uint8_t tempExists;
-        readStorage(&tempExists, tempAddress + FILE_EXISTS_OFFSET, 1);
-        if (tempExists == FILE_EXISTS_TRUE) {
-            tempFileAmount += 1;
-        }
-        tempAddress += FILE_ENTRY_SIZE;
-    }
-    int8_t tempListLength = tempFileAmount + 1;
-    int8_t *tempList = createEmptyList(tempListLength);
-    value_t *tempListContents = (value_t *)(*(int8_t **)tempList + LIST_DATA_OFFSET);
-    int8_t *tempString = createStringFromProgMem(MENU_OPTION_CREATE_FILE);
-    value_t *tempValue = tempListContents + 0;
-    tempValue->type = VALUE_TYPE_STRING;
-    *(int8_t **)&(tempValue->data) = tempString;
-    int8_t index = 1;
-    tempAddress = 0;
-    while (tempAddress < STORAGE_SIZE) {
-        uint8_t tempExists;
-        readStorage(&tempExists, tempAddress + FILE_EXISTS_OFFSET, 1);
-        if (tempExists == FILE_EXISTS_TRUE) {
+static void promptFileAction(int32_t address) {
+    while (true) {
+        int8_t tempResult;
+        {
             int8_t tempName[FILE_NAME_MAXIMUM_LENGTH + 1];
-            readStorage(tempName, tempAddress + FILE_NAME_OFFSET, FILE_NAME_MAXIMUM_LENGTH + 1);
-            int8_t *tempString = createString(tempName);
-            value_t *tempValue = tempListContents + index;
-            tempValue->type = VALUE_TYPE_STRING;
-            *(int8_t **)&(tempValue->data) = tempString;
-            index += 1;
+            readStorage(tempName, address + FILE_NAME_OFFSET, FILE_NAME_MAXIMUM_LENGTH + 1);
+            int8_t *tempTitle = createString(tempName);
+            tempResult = menuWithOptionsFromProgMem(tempTitle, MENU_FILE, sizeof(MENU_FILE) / sizeof(*MENU_FILE));
+            deallocate(tempTitle);
         }
-        tempAddress += FILE_ENTRY_SIZE;
+        if (tempResult < 0) {
+            break;
+        }
+        
     }
-    int8_t tempResult = menuWithTitleFromProgMem(MENU_TITLE_FILE_LIST, tempList);
-    index = 0;
-    while (index < tempListLength) {
-        value_t *tempValue = tempListContents + index;
-        int8_t *tempString = *(int8_t **)&(tempValue->data);
-        deallocate(tempString);
-        index += 1;
-    }
-    deallocate(tempList);
-    if (tempResult == 0) {
-        promptCreateFile();
-    } else {
+}
+
+static void mainMenu() {
+    while (true) {
+        int8_t tempFileAmount = 0;
+        int32_t tempAddress = 0;
+        while (tempAddress < STORAGE_SIZE) {
+            uint8_t tempExists;
+            readStorage(&tempExists, tempAddress + FILE_EXISTS_OFFSET, 1);
+            if (tempExists == FILE_EXISTS_TRUE) {
+                tempFileAmount += 1;
+            }
+            tempAddress += FILE_ENTRY_SIZE;
+        }
+        int8_t tempListLength = tempFileAmount + 1;
+        int8_t *tempList = createEmptyList(tempListLength);
+        value_t *tempListContents = (value_t *)(*(int8_t **)tempList + LIST_DATA_OFFSET);
+        int8_t *tempString = createStringFromProgMem(MENU_OPTION_CREATE_FILE);
+        value_t *tempValue = tempListContents + 0;
+        tempValue->type = VALUE_TYPE_STRING;
+        *(int8_t **)&(tempValue->data) = tempString;
         int8_t index = 1;
         tempAddress = 0;
         while (tempAddress < STORAGE_SIZE) {
             uint8_t tempExists;
             readStorage(&tempExists, tempAddress + FILE_EXISTS_OFFSET, 1);
             if (tempExists == FILE_EXISTS_TRUE) {
-                if (index == tempResult) {
-                    break;
-                }
+                int8_t tempName[FILE_NAME_MAXIMUM_LENGTH + 1];
+                readStorage(tempName, tempAddress + FILE_NAME_OFFSET, FILE_NAME_MAXIMUM_LENGTH + 1);
+                int8_t *tempString = createString(tempName);
+                value_t *tempValue = tempListContents + index;
+                tempValue->type = VALUE_TYPE_STRING;
+                *(int8_t **)&(tempValue->data) = tempString;
                 index += 1;
             }
             tempAddress += FILE_ENTRY_SIZE;
         }
-        // TODO: Something with tempAddress.
-        
+        int8_t tempResult = menuWithTitleFromProgMem(MENU_TITLE_FILE_LIST, tempList);
+        index = 0;
+        while (index < tempListLength) {
+            value_t *tempValue = tempListContents + index;
+            int8_t *tempString = *(int8_t **)&(tempValue->data);
+            deallocate(tempString);
+            index += 1;
+        }
+        deallocate(tempList);
+        if (tempResult == 0) {
+            promptCreateFile();
+        } else {
+            int8_t index = 1;
+            tempAddress = 0;
+            while (tempAddress < STORAGE_SIZE) {
+                uint8_t tempExists;
+                readStorage(&tempExists, tempAddress + FILE_EXISTS_OFFSET, 1);
+                if (tempExists == FILE_EXISTS_TRUE) {
+                    if (index == tempResult) {
+                        break;
+                    }
+                    index += 1;
+                }
+                tempAddress += FILE_ENTRY_SIZE;
+            }
+            promptFileAction(tempAddress);
+        }
     }
 }
 
@@ -1473,9 +1491,7 @@ int main(int argc, const char *argv[]) {
     init_pair(WHITE_ON_CYAN, COLOR_WHITE, COLOR_CYAN);
     handleResize();
     
-    while (true) {
-        mainMenu();
-    }
+    mainMenu();
     
     endwin();
     

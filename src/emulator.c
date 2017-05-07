@@ -58,6 +58,7 @@
 #define VALUE_TYPE_LIST 3
 
 #define FILE_NAME_MAXIMUM_LENGTH 15
+#define FILE_MAXIMUM_SIZE 1000
 #define FILE_EXISTS_TRUE 1
 #define FILE_EXISTS_FALSE 255
 
@@ -1391,6 +1392,38 @@ static int8_t promptDeleteFile(int32_t address) {
     return false;
 }
 
+static void editFile(int32_t address) {
+    int16_t tempSize;
+    readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
+    readStorage(memory, address + FILE_DATA_OFFSET, tempSize + 1);
+    initializeTextEditor(memory, FILE_MAXIMUM_SIZE, false);
+    while (true) {
+        runTextEditor();
+        int8_t tempShouldQuitEditor = false;
+        while (true) {
+            int8_t tempResult = menuFromProgMem(MENU_TITLE_TEXT_EDITOR, MENU_TEXT_EDITOR, sizeof(MENU_TEXT_EDITOR) / sizeof(*MENU_TEXT_EDITOR));
+            if (tempResult < 0) {
+                break;
+            }
+            if (tempResult == 0) {
+                clearDisplay();
+                displayTextFromProgMem(0, 0, MESSAGE_SAVING);
+                tempSize = strlen(memory);
+                writeStorage(address + FILE_SIZE_OFFSET, &tempSize, 2);
+                writeStorage(address + FILE_DATA_OFFSET, memory, tempSize + 1);
+                printTextFromProgMem(MESSAGE_FILE_SAVED);
+            }
+            if (tempResult == 1) {
+                tempShouldQuitEditor = true;
+                break;
+            }
+        }
+        if (tempShouldQuitEditor) {
+            break;
+        }
+    }
+}
+
 static void promptFileAction(int32_t address) {
     while (true) {
         int8_t tempResult;
@@ -1409,8 +1442,7 @@ static void promptFileAction(int32_t address) {
             
         }
         if (tempResult == 1) {
-            // TODO: Edit file.
-            
+            editFile(address);
         }
         if (tempResult == 2) {
             promptRenameFile(address);

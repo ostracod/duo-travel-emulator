@@ -32,6 +32,7 @@
 #define KEY_DELETE 9
 #define KEY_NEWLINE 10
 #define KEY_ESCAPE 11
+#define KEY_FINISHED 12
 
 #define ALLOCATION_PREVIOUS_OFFSET sizeof(int8_t *)
 #define ALLOCATION_NEXT_OFFSET (ALLOCATION_PREVIOUS_OFFSET + sizeof(int8_t *))
@@ -279,13 +280,13 @@ const int8_t *SYMBOL_TEXT_LIST[] PROGMEM = {
 #define SYMBOL_FILE_READ 194
 #define SYMBOL_FILE_WRITE 195
 
-const int8_t SYMBOL_SET_LETTERS[] PROGMEM = {
+const uint8_t SYMBOL_SET_LETTERS[] PROGMEM = {
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
     'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
     'U', 'V', 'W', 'X', 'Y', 'Z'
 };
 
-const int8_t SYMBOL_SET_NUMBERS[] PROGMEM = {
+const uint8_t SYMBOL_SET_NUMBERS[] PROGMEM = {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
     '.', '-'
 };
@@ -448,17 +449,44 @@ const int8_t SYMBOL_SET_SIZE_LIST[] PROGMEM = {
 
 const int8_t SYMBOL_REPRESENTATION_SPACE[] PROGMEM = "(Space)";
 
-const int8_t TEST_MESSAGE_1[] PROGMEM = "TITLE";
-const int8_t TEST_MESSAGE_2[] PROGMEM = "ONE";
-const int8_t TEST_MESSAGE_3[] PROGMEM = "TWO";
-const int8_t TEST_MESSAGE_4[] PROGMEM = "THREE";
-const int8_t TEST_MESSAGE_5[] PROGMEM = "FOUR";
-const int8_t *TEST_MESSAGE_LIST[] PROGMEM = {
-    TEST_MESSAGE_2,
-    TEST_MESSAGE_3,
-    TEST_MESSAGE_4,
-    TEST_MESSAGE_5,
+const int8_t MENU_TITLE_FILE_LIST[] PROGMEM = "File List";
+const int8_t MENU_TITLE_TEXT_EDITOR[] PROGMEM = "Text Editor";
+const int8_t MENU_TITLE_FILE_DELETE[] PROGMEM = "Are you sure?";
+
+const int8_t MENU_OPTION_CREATE_FILE[] PROGMEM = "Create file";
+const int8_t MENU_OPTION_RUN[] PROGMEM = "Run";
+const int8_t MENU_OPTION_EDIT[] PROGMEM = "Edit";
+const int8_t MENU_OPTION_RENAME[] PROGMEM = "Rename";
+const int8_t MENU_OPTION_DELETE[] PROGMEM = "Delete";
+const int8_t MENU_OPTION_SAVE[] PROGMEM = "Save";
+const int8_t MENU_OPTION_QUIT[] PROGMEM = "Quit";
+const int8_t MENU_OPTION_YES_DELETE[] PROGMEM = "Yes delete";
+const int8_t MENU_OPTION_NO_DELETE[] PROGMEM = "Do not delete";
+
+const int8_t *MENU_FILE[] PROGMEM = {
+    MENU_OPTION_RUN,
+    MENU_OPTION_EDIT,
+    MENU_OPTION_RENAME,
+    MENU_OPTION_DELETE
 };
+
+const int8_t *MENU_TEXT_EDITOR[] PROGMEM = {
+    MENU_OPTION_SAVE,
+    MENU_OPTION_QUIT
+};
+
+const int8_t *MENU_FILE_DELETE[] PROGMEM = {
+    MENU_OPTION_YES_DELETE,
+    MENU_OPTION_NO_DELETE
+};
+
+const int8_t MESSAGE_ENTER_NAME[] PROGMEM = "Enter file name.";
+const int8_t MESSAGE_FILE_CREATED[] PROGMEM = "Created file.";
+const int8_t MESSAGE_ENTER_NEW_NAME[] PROGMEM = "Enter new name.";
+const int8_t MESSAGE_FILE_RENAMED[] PROGMEM = "Renamed file.";
+const int8_t MESSAGE_FILE_DELETED[] PROGMEM = "Deleted file.";
+const int8_t MESSAGE_SAVING[] PROGMEM = "Saving...";
+const int8_t MESSAGE_FILE_SAVED[] PROGMEM = "Saved file.";
 
 typedef struct value {
     int8_t type;
@@ -549,6 +577,9 @@ int8_t getKey() {
         }
         if (tempKey == 27) {
             return KEY_ESCAPE;
+        }
+        if (tempKey == 'f') {
+            return KEY_FINISHED;
         }
     }
 }
@@ -867,7 +898,7 @@ static int8_t printText(int8_t *text) {
         if (tempKey == KEY_CURSOR_DOWN) {
             tempNextPosY += 1;
         }
-        if (tempKey == KEY_SELECT_OPTION) {
+        if (tempKey == KEY_SELECT_OPTION || tempKey == KEY_FINISHED) {
             return true;
         }
         if (tempKey == KEY_ESCAPE) {
@@ -935,7 +966,7 @@ static int8_t menu(int8_t *title, int8_t *optionList) {
                 tempNextIndex = 0;
             }
         }
-        if (tempKey == KEY_SELECT_OPTION) {
+        if (tempKey == KEY_SELECT_OPTION || tempKey == KEY_FINISHED) {
             return index;
         }
         if (tempKey == KEY_ESCAPE) {
@@ -1056,7 +1087,7 @@ static void insertTextEditorSymbol(uint8_t symbol) {
     textEditorIndex += 1;
 }
 
-static void runTextEditor() {
+static int8_t runTextEditor() {
     displayTextEditorLine();
     displayTextEditorSymbolSet();
     displayTextEditorSymbol();
@@ -1169,8 +1200,11 @@ static void runTextEditor() {
                 shouldDisplayTextLine = true;
             }
         }
+        if (tempKey == KEY_FINISHED) {
+            return true;
+        }
         if (tempKey == KEY_ESCAPE) {
-            return;
+            return false;
         }
         if (shouldDisplayTextLine) {
             displayTextEditorLine();

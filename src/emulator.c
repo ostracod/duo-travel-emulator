@@ -679,6 +679,42 @@ const void *pgm_read_ptr(const void **pointer) {
     return *pointer;
 }
 
+void convertFloatToText(int8_t *destination, float number) {
+    sprintf(destination, "%f", number);
+    int8_t tempHasDecimalPoint = false;
+    int8_t index = 0;
+    while (true) {
+        int8_t tempCharacter = destination[index];
+        if (tempCharacter == '.') {
+            tempHasDecimalPoint = true;
+        } else if (!((tempCharacter >= '0' && tempCharacter <= '9') || tempCharacter == '-')) {
+            break;
+        }
+        index += 1;
+    }
+    if (!tempHasDecimalPoint) {
+        return;
+    }
+    int8_t tempStartIndex = index;
+    while (index > 0) {
+        int8_t tempCharacter = destination[index - 1];
+        if (tempCharacter >= '1' && tempCharacter <= '9') {
+            break;
+        }
+        index -= 1;
+        if (tempCharacter == '.') {
+            break;
+        }
+    }
+    if (index != tempStartIndex) {
+        strcpy(destination + index, destination + tempStartIndex);
+    }
+}
+
+float convertTextToFloat(int8_t *text) {
+    return atof(text);
+}
+
 void displayCharacter(int8_t posX, int8_t posY, int8_t character) {
     if (posX < 0 || posX >= DISPLAY_WIDTH || posY < 0 || posY >= DISPLAY_HEIGHT) {
         return;
@@ -996,7 +1032,7 @@ static void displayStringAllocation(int8_t posX, int8_t posY, int8_t *string) {
 static int8_t displayValue(int8_t posX, int8_t posY, value_t *value) {
     if (value->type == VALUE_TYPE_NUMBER) {
         int8_t tempBuffer[20];
-        sprintf(tempBuffer, "%f", *(float *)&(value->data));
+        convertFloatToText(tempBuffer, *(float *)&(value->data));
         displayText(posX, posY, tempBuffer);
         return true;
     } else if (value->type == VALUE_TYPE_STRING) {
@@ -1101,7 +1137,7 @@ static int8_t printStringAllocation(int8_t *string) {
 static int8_t printValue(value_t *value) {
     if (value->type == VALUE_TYPE_NUMBER) {
         int8_t tempBuffer[20];
-        sprintf(tempBuffer, "%f", *(float *)&(value->data));
+        convertFloatToText(tempBuffer, *(float *)&(value->data));
         int8_t tempResult = printText(tempBuffer);
         return tempResult;
     } else if (value->type == VALUE_TYPE_STRING) {
@@ -1583,7 +1619,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             index += 1;
         }
         tempResult.value.type = VALUE_TYPE_NUMBER;
-        *(float *)&(tempResult.value.data) = atof(tempBuffer);
+        *(float *)&(tempResult.value.data) = convertTextToFloat(tempBuffer);
     } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
         uint8_t tempFunction = tempSymbol;
         code += 1;

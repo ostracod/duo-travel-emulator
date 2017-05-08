@@ -1549,6 +1549,18 @@ static int8_t promptDeleteFile(int32_t address) {
     return false;
 }
 
+static int8_t isUnaryOperator(uint8_t symbol) {
+    int8_t index = 0;
+    while (index < sizeof(UNARY_OPERATOR_LIST)) {
+        uint8_t tempSymbol = pgm_read_byte(UNARY_OPERATOR_LIST + index);
+        if (symbol == tempSymbol) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
     uint8_t tempSymbol = readStorageInt8(code);
     expressionResult_t tempResult;
@@ -1606,6 +1618,18 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         if (tempShouldDisplayRunning) {
             clearDisplay();
             displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
+        }
+    } else if (isUnaryOperator(tempSymbol)) {
+        code += 1;
+        expressionResult_t tempResult2 = evaluateExpression(code, 0, false);
+        code = tempResult2.nextCode;
+        if (tempSymbol == '!') {
+            tempResult.value.type = VALUE_TYPE_NUMBER;
+            if (*(float *)&(tempResult2.value.data) == 0.0) {
+                *(float *)&(tempResult.value.data) = 1.0;
+            } else {
+                *(float *)&(tempResult.value.data) = 0.0;
+            }
         }
     }
     while (true) {

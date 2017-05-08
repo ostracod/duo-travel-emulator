@@ -73,9 +73,16 @@
 #define EVALUATION_STATUS_NORMAL 0
 #define EVALUATION_STATUS_QUIT 1
 
+#define SCOPE_SIZE_OFFSET 0
+#define SCOPE_VARIABLE_OFFSET (SCOPE_SIZE_OFFSET + 2)
+#define SCOPE_BRANCH_OFFSET (SCOPE_VARIABLE_OFFSET + sizeof(int8_t *))
+#define SCOPE_DATA_OFFSET (SCOPE_BRANCH_OFFSET + sizeof(int8_t *))
+
+#define VARIABLE_NAME_MAXIMUM_LENGTH 15
+
 #define VARIABLE_NEXT_OFFSET 0
-#define VARIABLE_VALUE_OFFSET (VARIABLE_NEXT_OFFSET + sizeof(int8_t *));
-#define VARIABLE_NAME_OFFSET (VARIABLE_VALUE_OFFSET + sizeof(value_t));
+#define VARIABLE_VALUE_OFFSET (VARIABLE_NEXT_OFFSET + sizeof(int8_t *))
+#define VARIABLE_NAME_OFFSET (VARIABLE_VALUE_OFFSET + sizeof(value_t))
 
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
@@ -643,6 +650,12 @@ typedef struct expressionResult {
     value_t value;
     int32_t nextCode;
 } expressionResult_t;
+
+typedef struct branch {
+    // TODO: Add more members.
+    
+    int32_t address;
+} branch_t;
 
 WINDOW *window;
 int32_t windowWidth;
@@ -1597,7 +1610,46 @@ static int8_t isUnaryOperator(uint8_t symbol) {
     return false;
 }
 
+static int32_t readStorageVariableName(uint8_t *destination, int32_t address) {
+    int8_t index = 0;
+    while (index < VARIABLE_NAME_MAXIMUM_LENGTH) {
+        uint8_t tempSymbol = readStorageInt8(address);
+        if (!((tempSymbol >= 'A' && tempSymbol <= 'Z') || (tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '_')) {
+            break;
+        }
+        destination[index] = tempSymbol;
+        address += 1;
+        index += 1;
+    }
+    destination[index] = 0;
+    return address;
+}
+
+static value_t *findVariableValueByName(uint8_t *name) {
+    int8_t *tempVariable = localScope + SCOPE_VARIABLE_OFFSET;
+    while (tempVariable != NULL) {
+        if (strcmp(name, tempVariable + VARIABLE_NAME_OFFSET) == 0) {
+            return (value_t *)(tempVariable + VARIABLE_VALUE_OFFSET);
+        }
+        tempVariable = *(int8_t **)(tempVariable + VARIABLE_NEXT_OFFSET);
+    }
+    return NULL;
+}
+
+static value_t *createVariable(uint8_t *name) {
+    int8_t tempLength = strlen(name);
+    int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
+    int8_t *tempVariable = localScope + SCOPE_DATA_OFFSET + tempSize;
+    tempSize += VARIABLE_NAME_OFFSET + tempLength + 1;
+    *(int16_t *)(localScope + SCOPE_SIZE_OFFSET) = tempSize;
+    *(int8_t **)(tempVariable + VARIABLE_NEXT_OFFSET) = *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET);
+    *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET) = tempVariable;
+    strcpy(tempVariable + VARIABLE_NAME_OFFSET, name);
+    return (value_t *)(tempVariable + VARIABLE_VALUE_OFFSET);
+}
+
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
+    int32_t tempStartCode = code;
     uint8_t tempSymbol = readStorageInt8(code);
     expressionResult_t tempResult;
     tempResult.status = EVALUATION_STATUS_NORMAL;
@@ -1620,6 +1672,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         }
         tempResult.value.type = VALUE_TYPE_NUMBER;
         *(float *)&(tempResult.value.data) = convertTextToFloat(tempBuffer);
+    } else if ((tempSymbol >= 'A' && tempSymbol <= 'Z') || tempSymbol == '_') {
+        uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+        code = readStorageVariableName(tempBuffer, code);
+        tempResult.destination = findVariableValueByName(tempBuffer);
+        if (tempResult.destination != NULL) {
+            tempResult.value = *(tempResult.destination);
+        }
     } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
         uint8_t tempFunction = tempSymbol;
         code += 1;
@@ -1696,6 +1755,15 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempSymbol == '*') {
                 *(float *)&(tempResult.value.data) *= *(float *)&(tempResult2.value.data);
             }
+            if (tempSymbol == '=') {
+                if (tempResult.destination == NULL) {
+                    // TODO: Make sure this is actually a variable.
+                    uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+                    readStorageVariableName(tempBuffer, tempStartCode);
+                    tempResult.destination = createVariable(tempBuffer);
+                }
+                *(tempResult.destination) = tempResult2.value;
+            }
             code = tempResult2.nextCode;
         } else {
             break;
@@ -1709,6 +1777,11 @@ static void runFile(int32_t address) {
     int32_t tempExpression = address + FILE_DATA_OFFSET;
     clearDisplay();
     displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
+    globalScope = memory;
+    localScope = memory;
+    *(int16_t *)(globalScope + SCOPE_SIZE_OFFSET) = 0;
+    *(int8_t **)(globalScope + SCOPE_VARIABLE_OFFSET) = NULL;
+    *(branch_t **)(globalScope + SCOPE_BRANCH_OFFSET) = NULL;
     while (true) {
         uint8_t tempSymbol = readStorageInt8(tempExpression);
         if (tempSymbol == '\n') {

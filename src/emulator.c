@@ -72,6 +72,10 @@
 #define EVALUATION_STATUS_NORMAL 0
 #define EVALUATION_STATUS_QUIT 1
 
+#define VARIABLE_NEXT_OFFSET 0
+#define VARIABLE_VALUE_OFFSET (VARIABLE_NEXT_OFFSET + sizeof(int8_t *));
+#define VARIABLE_NAME_OFFSET (VARIABLE_VALUE_OFFSET + sizeof(value_t));
+
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
 const int8_t SYMBOL_TEXT_BOOLEAN_XOR[] PROGMEM = "^^";
@@ -655,6 +659,8 @@ int16_t textEditorMaximumLength;
 int8_t textEditorSymbolSetIndex;
 int8_t textEditorSymbolIndex[SYMBOL_SET_AMOUNT];
 int8_t textEditorNumberOnly;
+int8_t *globalScope;
+int8_t *localScope;
 
 int8_t pgm_read_byte(const int8_t *pointer) {
     return *pointer;
@@ -1596,7 +1602,7 @@ static expressionResult_t evaluateExpression(uint8_t *code, int8_t precedence, i
 static void runFile(int32_t address) {
     int16_t tempSize;
     readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
-    uint8_t *tempCode = alloca(tempSize + 1);
+    uint8_t tempCode[tempSize + 1];
     readStorage(tempCode, address + FILE_DATA_OFFSET, tempSize + 1);
     uint8_t *tempExpression = tempCode;
     clearDisplay();

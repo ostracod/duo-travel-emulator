@@ -41,7 +41,7 @@
 #define ALLOCATION_TYPE_OFFSET (ALLOCATION_SIZE_OFFSET + 1)
 #define ALLOCATION_IS_REACHABLE_OFFSET (ALLOCATION_TYPE_OFFSET + 1)
 #define ALLOCATION_HEADER_SIZE ALLOCATION_IS_REACHABLE_OFFSET
-#define HEAP_START_ADDRESS heapSpace
+#define HEAP_START_ADDRESS (memory + sizeof(memory))
 
 #define ALLOCATION_TYPE_POINTER 1
 #define ALLOCATION_TYPE_STRING 2
@@ -649,8 +649,8 @@ int32_t windowHeight;
 int8_t displayBuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 int8_t storageFilePath[] = "./storage.dat";
 FILE *storageFile;
-int8_t heapSpace[1000];
 
+int8_t memory[500];
 int8_t *firstAllocation = NULL;
 int8_t *textEditorText;
 int16_t textEditorIndex;
@@ -837,16 +837,16 @@ static int8_t *allocate(int16_t size, int8_t type) {
         if (tempPreviousAllocation == NULL) {
             tempAddress = HEAP_START_ADDRESS;
         } else {
-            int16_t tempAllocationSize = *(int16_t *)(tempPreviousAllocation - ALLOCATION_SIZE_OFFSET);
-            tempAddress = tempPreviousAllocation + tempAllocationSize;
+            tempAddress = tempPreviousAllocation - ALLOCATION_HEADER_SIZE;
         }
         if (tempNextAllocation == NULL) {
-            output = tempAddress + ALLOCATION_HEADER_SIZE;
+            output = tempAddress - size;
             break;
         }
-        int16_t tempGapSize = (tempNextAllocation - ALLOCATION_HEADER_SIZE) - tempAddress;
+        int16_t tempAllocationSize = *(int16_t *)(tempNextAllocation - ALLOCATION_SIZE_OFFSET);
+        int16_t tempGapSize = tempAddress - (tempNextAllocation + tempAllocationSize);
         if (tempGapSize >= size + ALLOCATION_HEADER_SIZE) {
-            output = tempAddress + ALLOCATION_HEADER_SIZE;
+            output = tempAddress - size;
             break;
         }
         tempPreviousAllocation = tempNextAllocation;
@@ -1760,11 +1760,11 @@ int main(int argc, const char *argv[]) {
     int8_t *tempAllocation2 = allocate(30, 0);
     int8_t *tempAllocation3 = allocate(30, 0);
     deallocate(tempAllocation2);
-    int8_t *tempAllocation4 = allocate(20, 0);
-    printf("%ld\n", tempAllocation1 - heapSpace);
-    printf("%ld\n", tempAllocation2 - heapSpace);
-    printf("%ld\n", tempAllocation3 - heapSpace);
-    printf("%ld\n", tempAllocation4 - heapSpace);
+    int8_t *tempAllocation4 = allocate(40, 0);
+    printf("%ld\n", tempAllocation1 - memory);
+    printf("%ld\n", tempAllocation2 - memory);
+    printf("%ld\n", tempAllocation3 - memory);
+    printf("%ld\n", tempAllocation4 - memory);
     return 0;
     */
     

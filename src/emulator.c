@@ -57,6 +57,7 @@
 #define VALUE_TYPE_NUMBER 1
 #define VALUE_TYPE_STRING 2
 #define VALUE_TYPE_LIST 3
+#define VALUE_TYPE_FUNCTION 4
 
 #define FILE_NAME_MAXIMUM_LENGTH 15
 #define FILE_MAXIMUM_SIZE 1000
@@ -1605,6 +1606,39 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         if (tempShouldDisplayRunning) {
             clearDisplay();
             displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
+        }
+    }
+    while (true) {
+        uint8_t tempSymbol = readStorageInt8(code);
+        int8_t tempHasFoundOperator = false;
+        int8_t index = 0;
+        while (index < sizeof(BINARY_OPERATOR_LIST)) {
+            uint8_t tempSymbol2 = pgm_read_byte(BINARY_OPERATOR_LIST + index);
+            if (tempSymbol == tempSymbol2) {
+                tempHasFoundOperator = true;
+                break;
+            }
+            index += 1;
+        }
+        if (tempHasFoundOperator) {
+            int8_t tempPrecedence = pgm_read_byte(BINARY_OPERATOR_PRECEDENCE_LIST + index);
+            if (tempPrecedence > precedence) {
+                break;
+            }
+            expressionResult_t tempResult2 = evaluateExpression(code + 1, tempPrecedence, false);
+            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                tempResult.status = tempResult2.status;
+                return tempResult;
+            }
+            if (tempSymbol == '+') {
+                *(float *)&(tempResult.value.data) += *(float *)&(tempResult2.value.data);
+            }
+            if (tempSymbol == '*') {
+                *(float *)&(tempResult.value.data) *= *(float *)&(tempResult2.value.data);
+            }
+            code = tempResult2.nextCode;
+        } else {
+            break;
         }
     }
     tempResult.nextCode = code;

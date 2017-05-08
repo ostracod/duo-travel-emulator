@@ -53,6 +53,7 @@
 #define LIST_LENGTH_OFFSET 0
 #define LIST_DATA_OFFSET (STRING_LENGTH_OFFSET + 2)
 
+#define VALUE_TYPE_MISSING 0
 #define VALUE_TYPE_NUMBER 1
 #define VALUE_TYPE_STRING 2
 #define VALUE_TYPE_LIST 3
@@ -67,6 +68,9 @@
 #define FILE_NAME_OFFSET (FILE_EXISTS_OFFSET + 1)
 #define FILE_SIZE_OFFSET (FILE_NAME_OFFSET + FILE_NAME_MAXIMUM_LENGTH + 1)
 #define FILE_DATA_OFFSET (FILE_SIZE_OFFSET + 2)
+
+#define EVALUATION_STATUS_NORMAL 0
+#define EVALUATION_STATUS_QUIT 1
 
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
@@ -325,6 +329,8 @@ const int8_t BINARY_OPERATOR_LIST[] = {
     SYMBOL_BITSHIFT_LEFT_ASSIGN,
     SYMBOL_BITSHIFT_RIGHT_ASSIGN,
 };
+
+// All unary operators have a precedence of 0.
 
 const int8_t BINARY_OPERATOR_PRECEDENCE_LIST[] = {
     1, // '*'
@@ -619,11 +625,19 @@ const int8_t MESSAGE_FILE_RENAMED[] PROGMEM = "Renamed file.";
 const int8_t MESSAGE_FILE_DELETED[] PROGMEM = "Deleted file.";
 const int8_t MESSAGE_SAVING[] PROGMEM = "Saving...";
 const int8_t MESSAGE_FILE_SAVED[] PROGMEM = "Saved file.";
+const int8_t MESSAGE_RUNNING[] PROGMEM = "Running...";
 
 typedef struct value {
     int8_t type;
     int8_t data[sizeof(int8_t *) > sizeof(float) ? sizeof(int8_t *) : sizeof(float)];
 } value_t;
+
+typedef struct expressionResult {
+    int8_t status;
+    value_t *destination;
+    value_t value;
+    uint8_t *nextCode;
+} expressionResult_t;
 
 WINDOW *window;
 int32_t windowWidth;
@@ -1075,12 +1089,12 @@ static int8_t printValue(value_t *value) {
     if (value->type == VALUE_TYPE_NUMBER) {
         int8_t tempBuffer[20];
         sprintf(tempBuffer, "%f", *(float *)&(value->data));
-        printText(tempBuffer);
-        return true;
+        int8_t tempResult = printText(tempBuffer);
+        return tempResult;
     } else if (value->type == VALUE_TYPE_STRING) {
         int8_t *tempString = *(int8_t **)&(value->data);
-        printStringAllocation(tempString);
-        return true;
+        int8_t tempResult = printStringAllocation(tempString);
+        return tempResult;
     } else {
         return false;
     }
@@ -1522,12 +1536,85 @@ static int8_t promptDeleteFile(int32_t address) {
     return false;
 }
 
+static expressionResult_t evaluateExpression(uint8_t *code, int8_t precedence, int8_t isTopLevel) {
+    uint8_t tempSymbol = *code;
+    expressionResult_t tempResult;
+    tempResult.status = EVALUATION_STATUS_NORMAL;
+    tempResult.destination = NULL;
+    tempResult.value.type = VALUE_TYPE_MISSING;
+    if ((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.') {
+        tempResult.value.type = VALUE_TYPE_NUMBER;
+        *(float *)&(tempResult.value.data) = atof(code);
+        code += 1;
+        while (true) {
+            tempSymbol = *code;
+            if (!((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.')) {
+                break;
+            }
+            code += 1;
+        }
+    } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
+        uint8_t tempFunction = tempSymbol;
+        code += 1;
+        int8_t tempArgumentAmount = pgm_read_byte(FUNCTION_ARGUMENT_AMOUNT_LIST + (tempSymbol - FIRST_FUNCTION_SYMBOL));
+        value_t tempArgumentList[tempArgumentAmount];
+        uint8_t *tempExpressionList[tempArgumentAmount];
+        int8_t index = 0;
+        while (index < tempArgumentAmount) {
+            tempExpressionList[index] = code;
+            expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
+            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                tempResult.status = tempResult2.status;
+                return tempResult;
+            }
+            tempArgumentList[index] = tempResult2.value;
+            code = tempResult2.nextCode;
+            if (index < tempArgumentAmount - 1) {
+                // TODO: Check for comma.
+                code += 1;
+            }
+            index += 1;
+        }
+        int8_t tempShouldDisplayRunning = false;
+        if (tempFunction == SYMBOL_PRINT) {
+            int8_t tempResult2 = printValue(tempArgumentList + 0);
+            if (!tempResult2) {
+                tempResult.status = EVALUATION_STATUS_QUIT;
+            } else {
+                tempShouldDisplayRunning = true;
+            }
+        }
+        if (tempShouldDisplayRunning) {
+            clearDisplay();
+            displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
+        }
+    }
+    tempResult.nextCode = code;
+    return tempResult;
+}
+
 static void runFile(int32_t address) {
     int16_t tempSize;
     readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
-    int8_t *tempCode = alloca(tempSize + 1);
+    uint8_t *tempCode = alloca(tempSize + 1);
     readStorage(tempCode, address + FILE_DATA_OFFSET, tempSize + 1);
-    
+    uint8_t *tempExpression = tempCode;
+    clearDisplay();
+    displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
+    while (true) {
+        uint8_t tempSymbol = *tempExpression;
+        if (tempSymbol == '\n') {
+            tempExpression += 1;
+        } else if (tempSymbol == 0) {
+            break;
+        } else {
+            expressionResult_t tempResult = evaluateExpression(tempExpression, 99, true);
+            if (tempResult.status == EVALUATION_STATUS_QUIT) {
+                break;
+            }
+            tempExpression = tempResult.nextCode;
+        }
+    }
 }
 
 static void editFile(int32_t address) {

@@ -84,6 +84,11 @@
 #define VARIABLE_VALUE_OFFSET (VARIABLE_NEXT_OFFSET + sizeof(int8_t *))
 #define VARIABLE_NAME_OFFSET (VARIABLE_VALUE_OFFSET + sizeof(value_t))
 
+#define BRANCH_ACTION_RUN 0
+#define BRANCH_ACTION_IGNORE_SOFT 1
+#define BRANCH_ACTION_IGNORE_HARD 2
+#define BRANCH_ACTION_LOOP 3
+
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
 const int8_t SYMBOL_TEXT_BOOLEAN_XOR[] PROGMEM = "^^";
@@ -656,9 +661,12 @@ typedef struct expressionResult {
     int32_t nextCode;
 } expressionResult_t;
 
+typedef struct branch branch_t;
+
 typedef struct branch {
-    // TODO: Add more members.
-    
+    branch_t *previous;
+    branch_t *next;
+    int8_t action;
     int32_t address;
 } branch_t;
 
@@ -1653,125 +1661,201 @@ static value_t *createVariable(uint8_t *name) {
     return (value_t *)(tempVariable + VARIABLE_VALUE_OFFSET);
 }
 
+static branch_t *createBranch() {
+    int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
+    branch_t *output = (branch_t *)(localScope + SCOPE_DATA_OFFSET + tempSize);
+    tempSize += sizeof(branch_t);
+    *(int16_t *)(localScope + SCOPE_SIZE_OFFSET) = tempSize;
+    branch_t *tempPreviousBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
+    if (tempPreviousBranch != NULL) {
+        tempPreviousBranch->next = output;
+    }
+    output->previous = tempPreviousBranch;
+    output->next = NULL;
+    return output;
+}
+
+static void pushBranch(int8_t action, int32_t address) {
+    branch_t *tempBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
+    branch_t *tempNextBranch;
+    if (tempBranch == NULL) {
+        tempNextBranch = createBranch();
+    } else {
+        tempNextBranch = tempBranch->next;
+        if (tempNextBranch == NULL) {
+            tempNextBranch = createBranch();
+        }
+    }
+    tempNextBranch->action = action;
+    tempNextBranch->address = address;
+    *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = tempNextBranch;
+}
+
+static void popBranch() {
+    branch_t *tempBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
+    branch_t *tempPreviousBranch = tempBranch->previous;
+    // TODO: Handle error if tempPreviousBranch is NULL.
+    *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = tempPreviousBranch;
+}
+
+static int32_t skipStorageLine(int32_t address) {
+    while (true) {
+        uint8_t tempSymbol = readStorageInt8(address);
+        if (tempSymbol == '\n' || tempSymbol == 0) {
+            break;
+        }
+        address += 1;
+    }
+    return address;
+}
+
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
+    branch_t *tempBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
     int32_t tempStartCode = code;
     uint8_t tempSymbol = readStorageInt8(code);
     expressionResult_t tempResult;
     tempResult.status = EVALUATION_STATUS_NORMAL;
     tempResult.destination = NULL;
     tempResult.value.type = VALUE_TYPE_MISSING;
-    if ((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.') {
-        uint8_t tempBuffer[20];
-        tempBuffer[0] = tempSymbol;
-        code += 1;
-        int8_t index = 1;
-        while (true) {
-            tempSymbol = readStorageInt8(code);
-            if (!((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.')) {
-                tempBuffer[index] = 0;
-                break;
-            }
-            tempBuffer[index] = tempSymbol;
-            code += 1;
-            index += 1;
-        }
-        tempResult.value.type = VALUE_TYPE_NUMBER;
-        *(float *)&(tempResult.value.data) = convertTextToFloat(tempBuffer);
-    } else if ((tempSymbol >= 'A' && tempSymbol <= 'Z') || tempSymbol == '_') {
-        uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
-        code = readStorageVariableName(tempBuffer, code);
-        tempResult.destination = findVariableValueByName(tempBuffer);
-        if (tempResult.destination != NULL) {
-            tempResult.value = *(tempResult.destination);
-        }
-    } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
-        uint8_t tempFunction = tempSymbol;
-        code += 1;
-        int8_t tempArgumentAmount = pgm_read_byte(FUNCTION_ARGUMENT_AMOUNT_LIST + (tempSymbol - FIRST_FUNCTION_SYMBOL));
-        value_t tempArgumentList[tempArgumentAmount];
-        int32_t tempExpressionList[tempArgumentAmount];
-        int8_t index = 0;
-        while (index < tempArgumentAmount) {
-            tempExpressionList[index] = code;
-            expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
-            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                tempResult.status = tempResult2.status;
-                return tempResult;
-            }
-            tempArgumentList[index] = tempResult2.value;
-            code = tempResult2.nextCode;
-            if (index < tempArgumentAmount - 1) {
-                // TODO: Check for comma.
-                code += 1;
-            }
-            index += 1;
-        }
-        int8_t tempShouldDisplayRunning = false;
-        if (tempFunction == SYMBOL_PRINT) {
-            int8_t tempResult2 = printValue(tempArgumentList + 0);
-            if (!tempResult2) {
-                tempResult.status = EVALUATION_STATUS_QUIT;
-            } else {
-                tempShouldDisplayRunning = true;
-            }
-        }
-        if (tempShouldDisplayRunning) {
-            clearDisplay();
-            displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
-        }
-    } else if (isUnaryOperator(tempSymbol)) {
-        code += 1;
-        expressionResult_t tempResult2 = evaluateExpression(code, 0, false);
-        code = tempResult2.nextCode;
-        if (tempSymbol == '!') {
-            tempResult.value.type = VALUE_TYPE_NUMBER;
-            if (*(float *)&(tempResult2.value.data) == 0.0) {
-                *(float *)&(tempResult.value.data) = 1.0;
-            } else {
-                *(float *)&(tempResult.value.data) = 0.0;
-            }
+    int8_t tempShouldRun = true;
+    if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT || tempBranch->action == BRANCH_ACTION_IGNORE_HARD) {
+        tempShouldRun = false;
+        if (tempSymbol == SYMBOL_IF) {
+            pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+            code = skipStorageLine(code);
+        } else if (tempSymbol == SYMBOL_END) {
+            popBranch();
+            code = skipStorageLine(code);
+        } else {
+            code = skipStorageLine(code);
         }
     }
-    while (true) {
-        uint8_t tempSymbol = readStorageInt8(code);
-        int8_t tempHasFoundOperator = false;
-        int8_t index = 0;
-        while (index < sizeof(BINARY_OPERATOR_LIST)) {
-            uint8_t tempSymbol2 = pgm_read_byte(BINARY_OPERATOR_LIST + index);
-            if (tempSymbol == tempSymbol2) {
-                tempHasFoundOperator = true;
-                break;
-            }
-            index += 1;
-        }
-        if (tempHasFoundOperator) {
-            int8_t tempPrecedence = pgm_read_byte(BINARY_OPERATOR_PRECEDENCE_LIST + index);
-            if (tempPrecedence > precedence) {
-                break;
-            }
-            expressionResult_t tempResult2 = evaluateExpression(code + 1, tempPrecedence, false);
-            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                tempResult.status = tempResult2.status;
-                return tempResult;
-            }
-            if (tempSymbol == '+') {
-                *(float *)&(tempResult.value.data) += *(float *)&(tempResult2.value.data);
-            }
-            if (tempSymbol == '*') {
-                *(float *)&(tempResult.value.data) *= *(float *)&(tempResult2.value.data);
-            }
-            if (tempSymbol == '=') {
-                if (tempResult.destination == NULL) {
-                    // TODO: Make sure this is actually a variable.
-                    uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
-                    readStorageVariableName(tempBuffer, tempStartCode);
-                    tempResult.destination = createVariable(tempBuffer);
+    if (tempShouldRun) {
+        if ((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.') {
+            uint8_t tempBuffer[20];
+            tempBuffer[0] = tempSymbol;
+            code += 1;
+            int8_t index = 1;
+            while (true) {
+                tempSymbol = readStorageInt8(code);
+                if (!((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.')) {
+                    tempBuffer[index] = 0;
+                    break;
                 }
-                *(tempResult.destination) = tempResult2.value;
+                tempBuffer[index] = tempSymbol;
+                code += 1;
+                index += 1;
             }
+            tempResult.value.type = VALUE_TYPE_NUMBER;
+            *(float *)&(tempResult.value.data) = convertTextToFloat(tempBuffer);
+        } else if ((tempSymbol >= 'A' && tempSymbol <= 'Z') || tempSymbol == '_') {
+            uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+            code = readStorageVariableName(tempBuffer, code);
+            tempResult.destination = findVariableValueByName(tempBuffer);
+            if (tempResult.destination != NULL) {
+                tempResult.value = *(tempResult.destination);
+            }
+        } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
+            uint8_t tempFunction = tempSymbol;
+            code += 1;
+            int8_t tempArgumentAmount = pgm_read_byte(FUNCTION_ARGUMENT_AMOUNT_LIST + (tempSymbol - FIRST_FUNCTION_SYMBOL));
+            value_t tempArgumentList[tempArgumentAmount];
+            int32_t tempExpressionList[tempArgumentAmount];
+            int8_t index = 0;
+            while (index < tempArgumentAmount) {
+                tempExpressionList[index] = code;
+                expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
+                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                    tempResult.status = tempResult2.status;
+                    return tempResult;
+                }
+                tempArgumentList[index] = tempResult2.value;
+                code = tempResult2.nextCode;
+                if (index < tempArgumentAmount - 1) {
+                    // TODO: Check for comma.
+                    code += 1;
+                }
+                index += 1;
+            }
+            int8_t tempShouldDisplayRunning = false;
+            if (tempFunction == SYMBOL_PRINT) {
+                int8_t tempResult2 = printValue(tempArgumentList + 0);
+                if (!tempResult2) {
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                } else {
+                    tempShouldDisplayRunning = true;
+                }
+            }
+            if (tempFunction == SYMBOL_IF) {
+                if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
+                    pushBranch(BRANCH_ACTION_IGNORE_SOFT, 0);
+                } else {
+                    pushBranch(BRANCH_ACTION_RUN, 0);
+                }
+            }
+            if (tempFunction == SYMBOL_END) {
+                popBranch();
+                // TODO: Handle loop.
+                
+            }
+            if (tempShouldDisplayRunning) {
+                clearDisplay();
+                displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
+            }
+        } else if (isUnaryOperator(tempSymbol)) {
+            code += 1;
+            expressionResult_t tempResult2 = evaluateExpression(code, 0, false);
             code = tempResult2.nextCode;
-        } else {
-            break;
+            if (tempSymbol == '!') {
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                if (*(float *)&(tempResult2.value.data) == 0.0) {
+                    *(float *)&(tempResult.value.data) = 1.0;
+                } else {
+                    *(float *)&(tempResult.value.data) = 0.0;
+                }
+            }
+        }
+        while (true) {
+            uint8_t tempSymbol = readStorageInt8(code);
+            int8_t tempHasFoundOperator = false;
+            int8_t index = 0;
+            while (index < sizeof(BINARY_OPERATOR_LIST)) {
+                uint8_t tempSymbol2 = pgm_read_byte(BINARY_OPERATOR_LIST + index);
+                if (tempSymbol == tempSymbol2) {
+                    tempHasFoundOperator = true;
+                    break;
+                }
+                index += 1;
+            }
+            if (tempHasFoundOperator) {
+                int8_t tempPrecedence = pgm_read_byte(BINARY_OPERATOR_PRECEDENCE_LIST + index);
+                if (tempPrecedence > precedence) {
+                    break;
+                }
+                expressionResult_t tempResult2 = evaluateExpression(code + 1, tempPrecedence, false);
+                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                    tempResult.status = tempResult2.status;
+                    return tempResult;
+                }
+                if (tempSymbol == '+') {
+                    *(float *)&(tempResult.value.data) += *(float *)&(tempResult2.value.data);
+                }
+                if (tempSymbol == '*') {
+                    *(float *)&(tempResult.value.data) *= *(float *)&(tempResult2.value.data);
+                }
+                if (tempSymbol == '=') {
+                    if (tempResult.destination == NULL) {
+                        // TODO: Make sure this is actually a variable.
+                        uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+                        readStorageVariableName(tempBuffer, tempStartCode);
+                        tempResult.destination = createVariable(tempBuffer);
+                    }
+                    *(tempResult.destination) = tempResult2.value;
+                }
+                code = tempResult2.nextCode;
+            } else {
+                break;
+            }
         }
     }
     tempResult.nextCode = code;
@@ -1787,6 +1871,7 @@ static void runFile(int32_t address) {
     *(int16_t *)(globalScope + SCOPE_SIZE_OFFSET) = 0;
     *(int8_t **)(globalScope + SCOPE_VARIABLE_OFFSET) = NULL;
     *(branch_t **)(globalScope + SCOPE_BRANCH_OFFSET) = NULL;
+    pushBranch(BRANCH_ACTION_RUN, 0);
     while (true) {
         uint8_t tempSymbol = readStorageInt8(tempExpression);
         if (tempSymbol == '\n') {

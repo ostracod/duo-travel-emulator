@@ -640,7 +640,7 @@ typedef struct expressionResult {
     int8_t status;
     value_t *destination;
     value_t value;
-    uint8_t *nextCode;
+    int32_t nextCode;
 } expressionResult_t;
 
 WINDOW *window;
@@ -650,7 +650,7 @@ int8_t displayBuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 int8_t storageFilePath[] = "./storage.dat";
 FILE *storageFile;
 
-int8_t memory[500];
+int8_t memory[1200];
 int8_t *firstAllocation = NULL;
 int8_t *textEditorText;
 int16_t textEditorIndex;
@@ -804,6 +804,12 @@ void readStorage(void *destination, int32_t address, int32_t amount) {
 void writeStorage(int32_t address, void *source, int32_t amount) {
     fseek(storageFile, address, SEEK_SET);
     fwrite(source, 1, amount, storageFile);
+}
+
+int8_t readStorageInt8(int32_t address) {
+    int8_t output;
+    readStorage(&output, address, 1);
+    return output;
 }
 
 static int16_t getProgMemTextLength(const int8_t *text) {
@@ -1542,29 +1548,35 @@ static int8_t promptDeleteFile(int32_t address) {
     return false;
 }
 
-static expressionResult_t evaluateExpression(uint8_t *code, int8_t precedence, int8_t isTopLevel) {
-    uint8_t tempSymbol = *code;
+static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
+    uint8_t tempSymbol = readStorageInt8(code);
     expressionResult_t tempResult;
     tempResult.status = EVALUATION_STATUS_NORMAL;
     tempResult.destination = NULL;
     tempResult.value.type = VALUE_TYPE_MISSING;
     if ((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.') {
-        tempResult.value.type = VALUE_TYPE_NUMBER;
-        *(float *)&(tempResult.value.data) = atof(code);
+        uint8_t tempBuffer[20];
+        tempBuffer[0] = tempSymbol;
         code += 1;
+        int8_t index = 1;
         while (true) {
-            tempSymbol = *code;
+            tempSymbol = readStorageInt8(code);
             if (!((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.')) {
+                tempBuffer[index] = 0;
                 break;
             }
+            tempBuffer[index] = tempSymbol;
             code += 1;
+            index += 1;
         }
+        tempResult.value.type = VALUE_TYPE_NUMBER;
+        *(float *)&(tempResult.value.data) = atof(tempBuffer);
     } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
         uint8_t tempFunction = tempSymbol;
         code += 1;
         int8_t tempArgumentAmount = pgm_read_byte(FUNCTION_ARGUMENT_AMOUNT_LIST + (tempSymbol - FIRST_FUNCTION_SYMBOL));
         value_t tempArgumentList[tempArgumentAmount];
-        uint8_t *tempExpressionList[tempArgumentAmount];
+        int32_t tempExpressionList[tempArgumentAmount];
         int8_t index = 0;
         while (index < tempArgumentAmount) {
             tempExpressionList[index] = code;
@@ -1600,15 +1612,11 @@ static expressionResult_t evaluateExpression(uint8_t *code, int8_t precedence, i
 }
 
 static void runFile(int32_t address) {
-    int16_t tempSize;
-    readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
-    uint8_t tempCode[tempSize + 1];
-    readStorage(tempCode, address + FILE_DATA_OFFSET, tempSize + 1);
-    uint8_t *tempExpression = tempCode;
+    int32_t tempExpression = address + FILE_DATA_OFFSET;
     clearDisplay();
     displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
     while (true) {
-        uint8_t tempSymbol = *tempExpression;
+        uint8_t tempSymbol = readStorageInt8(tempExpression);
         if (tempSymbol == '\n') {
             tempExpression += 1;
         } else if (tempSymbol == 0) {
@@ -1626,9 +1634,8 @@ static void runFile(int32_t address) {
 static void editFile(int32_t address) {
     int16_t tempSize;
     readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
-    int8_t *tempText = alloca(tempSize + 1);
-    readStorage(tempText, address + FILE_DATA_OFFSET, tempSize + 1);
-    initializeTextEditor(tempText, FILE_MAXIMUM_SIZE, false);
+    readStorage(memory, address + FILE_DATA_OFFSET, tempSize + 1);
+    initializeTextEditor(memory, FILE_MAXIMUM_SIZE, false);
     while (true) {
         runTextEditor();
         int8_t tempShouldQuitEditor = false;
@@ -1640,9 +1647,9 @@ static void editFile(int32_t address) {
             if (tempResult == 0) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_SAVING);
-                tempSize = strlen(tempText);
+                tempSize = strlen(memory);
                 writeStorage(address + FILE_SIZE_OFFSET, &tempSize, 2);
-                writeStorage(address + FILE_DATA_OFFSET, tempText, tempSize + 1);
+                writeStorage(address + FILE_DATA_OFFSET, memory, tempSize + 1);
                 printTextFromProgMem(MESSAGE_FILE_SAVED);
             }
             if (tempResult == 1) {

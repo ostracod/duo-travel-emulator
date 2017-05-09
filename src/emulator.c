@@ -1710,6 +1710,12 @@ static int32_t skipStorageLine(int32_t address) {
     return address;
 }
 
+static int8_t getCustomFunctionArgumentAmount(int32_t code) {
+    // TODO: Implement.
+    
+    return 0;
+}
+
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
     branch_t *tempBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
     int32_t tempStartCode = code;
@@ -1721,7 +1727,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
     int8_t tempShouldRun = true;
     if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT || tempBranch->action == BRANCH_ACTION_IGNORE_HARD) {
         tempShouldRun = false;
-        if (tempSymbol == SYMBOL_IF) {
+        if (tempSymbol == SYMBOL_IF || tempSymbol == SYMBOL_FUNCTION) {
             pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
             code = skipStorageLine(code);
         } else if (tempSymbol == SYMBOL_END) {
@@ -1787,6 +1793,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     tempShouldDisplayRunning = true;
                 }
             }
+            if (tempFunction == SYMBOL_RETURN) {
+                tempResult.status = EVALUATION_STATUS_RETURN;
+            }
+            if (tempFunction == SYMBOL_RETURN_WITH_VALUE) {
+                tempResult.status = EVALUATION_STATUS_RETURN;
+                tempResult.value = tempArgumentList[0];
+            }
             if (tempFunction == SYMBOL_IF) {
                 if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
                     pushBranch(BRANCH_ACTION_IGNORE_SOFT, 0);
@@ -1798,6 +1811,14 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 popBranch();
                 // TODO: Handle loop.
                 
+            }
+            if (tempFunction == SYMBOL_FUNCTION) {
+                uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+                readStorageVariableName(tempBuffer, tempExpressionList[0]);
+                value_t *tempValue = createVariable(tempBuffer);
+                tempValue->type = VALUE_TYPE_FUNCTION;
+                *(int32_t *)(tempValue->data) = tempStartCode;
+                pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
             }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
@@ -1818,44 +1839,50 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         }
         while (true) {
             uint8_t tempSymbol = readStorageInt8(code);
-            int8_t tempHasFoundOperator = false;
-            int8_t index = 0;
-            while (index < sizeof(BINARY_OPERATOR_LIST)) {
-                uint8_t tempSymbol2 = pgm_read_byte(BINARY_OPERATOR_LIST + index);
-                if (tempSymbol == tempSymbol2) {
-                    tempHasFoundOperator = true;
-                    break;
-                }
-                index += 1;
-            }
-            if (tempHasFoundOperator) {
-                int8_t tempPrecedence = pgm_read_byte(BINARY_OPERATOR_PRECEDENCE_LIST + index);
-                if (tempPrecedence > precedence) {
-                    break;
-                }
-                expressionResult_t tempResult2 = evaluateExpression(code + 1, tempPrecedence, false);
-                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                    tempResult.status = tempResult2.status;
-                    return tempResult;
-                }
-                if (tempSymbol == '+') {
-                    *(float *)&(tempResult.value.data) += *(float *)&(tempResult2.value.data);
-                }
-                if (tempSymbol == '*') {
-                    *(float *)&(tempResult.value.data) *= *(float *)&(tempResult2.value.data);
-                }
-                if (tempSymbol == '=') {
-                    if (tempResult.destination == NULL) {
-                        // TODO: Make sure this is actually a variable.
-                        uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
-                        readStorageVariableName(tempBuffer, tempStartCode);
-                        tempResult.destination = createVariable(tempBuffer);
-                    }
-                    *(tempResult.destination) = tempResult2.value;
-                }
-                code = tempResult2.nextCode;
+            if (tempSymbol == ':' || tempSymbol == ';') {
+                int32_t tempAddress = *(int32_t *)&(tempResult.value.data);
+                int8_t tempArgumentAmount = getCustomFunctionArgumentAmount(tempAddress);
+                
             } else {
-                break;
+                int8_t tempHasFoundOperator = false;
+                int8_t index = 0;
+                while (index < sizeof(BINARY_OPERATOR_LIST)) {
+                    uint8_t tempSymbol2 = pgm_read_byte(BINARY_OPERATOR_LIST + index);
+                    if (tempSymbol == tempSymbol2) {
+                        tempHasFoundOperator = true;
+                        break;
+                    }
+                    index += 1;
+                }
+                if (tempHasFoundOperator) {
+                    int8_t tempPrecedence = pgm_read_byte(BINARY_OPERATOR_PRECEDENCE_LIST + index);
+                    if (tempPrecedence >= precedence) {
+                        break;
+                    }
+                    expressionResult_t tempResult2 = evaluateExpression(code + 1, tempPrecedence, false);
+                    if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                        tempResult.status = tempResult2.status;
+                        return tempResult;
+                    }
+                    if (tempSymbol == '+') {
+                        *(float *)&(tempResult.value.data) += *(float *)&(tempResult2.value.data);
+                    }
+                    if (tempSymbol == '*') {
+                        *(float *)&(tempResult.value.data) *= *(float *)&(tempResult2.value.data);
+                    }
+                    if (tempSymbol == '=') {
+                        if (tempResult.destination == NULL) {
+                            // TODO: Make sure this is actually a variable.
+                            uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+                            readStorageVariableName(tempBuffer, tempStartCode);
+                            tempResult.destination = createVariable(tempBuffer);
+                        }
+                        *(tempResult.destination) = tempResult2.value;
+                    }
+                    code = tempResult2.nextCode;
+                } else {
+                    break;
+                }
             }
         }
     }

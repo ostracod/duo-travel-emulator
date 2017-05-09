@@ -72,6 +72,7 @@
 
 #define EVALUATION_STATUS_NORMAL 0
 #define EVALUATION_STATUS_QUIT 1
+#define EVALUATION_STATUS_RETURN 2
 
 #define SCOPE_SIZE_OFFSET 0
 #define SCOPE_VARIABLE_OFFSET (SCOPE_SIZE_OFFSET + 2)
@@ -1862,8 +1863,29 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
     return tempResult;
 }
 
+static expressionResult_t runCode(int32_t address) {
+    while (true) {
+        uint8_t tempSymbol = readStorageInt8(address);
+        if (tempSymbol == '\n') {
+            address += 1;
+        } else if (tempSymbol == 0) {
+            expressionResult_t tempResult;
+            tempResult.status = EVALUATION_STATUS_NORMAL;
+            tempResult.destination = NULL;
+            tempResult.value.type = VALUE_TYPE_MISSING;
+            return tempResult;
+        } else {
+            expressionResult_t tempResult = evaluateExpression(address, 99, true);
+            if (tempResult.status == EVALUATION_STATUS_QUIT || tempResult.status == EVALUATION_STATUS_RETURN) {
+                return tempResult;
+            }
+            address = tempResult.nextCode;
+        }
+    }
+}
+
 static void runFile(int32_t address) {
-    int32_t tempExpression = address + FILE_DATA_OFFSET;
+    int32_t tempCode = address + FILE_DATA_OFFSET;
     clearDisplay();
     displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
     globalScope = memory;
@@ -1872,20 +1894,7 @@ static void runFile(int32_t address) {
     *(int8_t **)(globalScope + SCOPE_VARIABLE_OFFSET) = NULL;
     *(branch_t **)(globalScope + SCOPE_BRANCH_OFFSET) = NULL;
     pushBranch(BRANCH_ACTION_RUN, 0);
-    while (true) {
-        uint8_t tempSymbol = readStorageInt8(tempExpression);
-        if (tempSymbol == '\n') {
-            tempExpression += 1;
-        } else if (tempSymbol == 0) {
-            break;
-        } else {
-            expressionResult_t tempResult = evaluateExpression(tempExpression, 99, true);
-            if (tempResult.status == EVALUATION_STATUS_QUIT) {
-                break;
-            }
-            tempExpression = tempResult.nextCode;
-        }
-    }
+    runCode(tempCode);
 }
 
 static void editFile(int32_t address) {

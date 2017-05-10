@@ -1711,6 +1711,8 @@ static int32_t skipStorageLine(int32_t address) {
 }
 
 static int8_t getCustomFunctionArgumentAmount(int32_t code) {
+    mvprintw(0, 0, "%d    ~~~~", code);
+    getch();
     int8_t output = 0;
     code += 1;
     while (true) {
@@ -1830,6 +1832,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 value_t *tempValue = createVariable(tempBuffer);
                 tempValue->type = VALUE_TYPE_FUNCTION;
                 *(int32_t *)(tempValue->data) = tempStartCode;
+                mvprintw(0, 0, "%d     ", tempStartCode);
+                getch();
                 pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
             }
             if (tempShouldDisplayRunning) {
@@ -1852,53 +1856,56 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         while (true) {
             uint8_t tempSymbol = readStorageInt8(code);
             if (tempSymbol == ':' || tempSymbol == ';') {
-                // TODO: Argument values must be stored in an array
-                // before creating the new scope.
-                
-                // getCustomFunctionArgumentAmount
-                
-                int8_t *tempPreviousScope = localScope;
-                int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
-                localScope += SCOPE_DATA_OFFSET + tempSize;
-                *(int16_t *)(localScope + SCOPE_SIZE_OFFSET) = 0;
-                *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET) = NULL;
-                *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = NULL;
-                int32_t tempCode = *(int32_t *)(tempResult.value.data);
                 code += 1;
-                tempCode += 1;
-                int8_t tempIsFirstTerm = true;
-                while (true) {
-                    uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
-                    int8_t tempHasReachedEnd = false;
+                int32_t tempCode = *(int32_t *)(tempResult.value.data);
+                int8_t tempArgumentAmount = getCustomFunctionArgumentAmount(tempCode);
+                int8_t *tempPreviousScope = localScope;
+                {
+                    value_t tempArgumentList[tempArgumentAmount];
                     int8_t index = 0;
-                    while (true) {
-                        uint8_t tempSymbol = readStorageInt8(tempCode);
-                        if (tempSymbol == ',') {
-                            tempCode += 1;
-                            break;
-                        }
-                        if (tempSymbol == '\n' || tempSymbol == 0) {
-                            tempHasReachedEnd = true;
-                            break;
-                        }
-                        tempBuffer[index] = tempSymbol;
-                        tempCode += 1;
-                        index += 1;
-                    }
-                    tempBuffer[index] = 0;
-                    if (!tempIsFirstTerm) {
+                    while (index < tempArgumentAmount) {
                         expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
                         if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                             tempResult.status = tempResult2.status;
                             return tempResult;
                         }
-                        value_t *tempValue = createVariable(tempBuffer);
-                        *tempValue = tempResult2.value;
+                        tempArgumentList[index] = tempResult2.value;
                         code = tempResult2.nextCode;
                         // TODO: Check for comma.
                         code += 1;
+                        index += 1;
                     }
-                    tempIsFirstTerm = false;
+                    int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
+                    localScope += SCOPE_DATA_OFFSET + tempSize;
+                    *(int16_t *)(localScope + SCOPE_SIZE_OFFSET) = 0;
+                    *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET) = NULL;
+                    *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = NULL;
+                    pushBranch(BRANCH_ACTION_RUN, 0);
+                    tempCode += 1;
+                    index = 0;
+                    while (index < tempArgumentAmount) {
+                        uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+                        int8_t tempIndex = 0;
+                        while (true) {
+                            uint8_t tempSymbol = readStorageInt8(tempCode);
+                            if (tempSymbol == ',') {
+                                tempCode += 1;
+                                break;
+                            }
+                            if (tempSymbol == '\n' || tempSymbol == 0) {
+                                break;
+                            }
+                            tempBuffer[tempIndex] = tempSymbol;
+                            tempCode += 1;
+                            tempIndex += 1;
+                        }
+                        tempBuffer[tempIndex] = 0;
+                        if (index > 0) {
+                            value_t *tempValue = createVariable(tempBuffer);
+                            *tempValue = tempArgumentList[index - 1];
+                        }
+                        index += 1;
+                    }
                 }
                 expressionResult_t tempResult2 = runCode(tempCode);
                 if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {

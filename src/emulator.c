@@ -1736,6 +1736,8 @@ static expressionResult_t runCode(int32_t address);
 
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
     branch_t *tempBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
+    //mvprintw(0, 0, "%d %d      ", code, tempBranch->action);
+    //getch();
     int32_t tempStartCode = code;
     uint8_t tempSymbol = readStorageInt8(code);
     expressionResult_t tempResult;
@@ -1784,13 +1786,16 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             uint8_t tempFunction = tempSymbol;
             code += 1;
             int8_t tempArgumentAmount = pgm_read_byte(FUNCTION_ARGUMENT_AMOUNT_LIST + (tempSymbol - FIRST_FUNCTION_SYMBOL));
+            if (tempArgumentAmount < 0) {
+                tempArgumentAmount = getCustomFunctionArgumentAmount(tempStartCode);
+            }
             value_t tempArgumentList[tempArgumentAmount];
             int32_t tempExpressionList[tempArgumentAmount];
             int8_t index = 0;
             while (index < tempArgumentAmount) {
                 tempExpressionList[index] = code;
                 expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
-                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
                     tempResult.status = tempResult2.status;
                     return tempResult;
                 }
@@ -1837,10 +1842,6 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempValue->type = VALUE_TYPE_FUNCTION;
                 *(int32_t *)(tempValue->data) = tempStartCode;
                 pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
-                
-                dumpMemory();
-                endwin();
-                exit(0);
             }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
@@ -1871,7 +1872,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     int8_t index = 0;
                     while (index < tempArgumentAmount) {
                         expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
-                        if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                        if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
                             tempResult.status = tempResult2.status;
                             return tempResult;
                         }
@@ -1937,7 +1938,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         break;
                     }
                     expressionResult_t tempResult2 = evaluateExpression(code + 1, tempPrecedence, false);
-                    if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                    if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
                         tempResult.status = tempResult2.status;
                         return tempResult;
                     }

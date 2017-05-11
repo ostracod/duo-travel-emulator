@@ -4,3 +4,4 @@ build
 .DS_store
 *.o
 storage.dat
+memoryDump.dat

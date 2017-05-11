@@ -876,6 +876,12 @@ int8_t readStorageInt8(int32_t address) {
     return output;
 }
 
+void dumpMemory() {
+    FILE *tempFile = fopen("./memoryDump.dat", "w");
+    fwrite(memory, 1, sizeof(memory), tempFile);
+    fclose(tempFile);
+}
+
 static int16_t getProgMemTextLength(const int8_t *text) {
     int16_t index = 0;
     while (true) {
@@ -1711,8 +1717,6 @@ static int32_t skipStorageLine(int32_t address) {
 }
 
 static int8_t getCustomFunctionArgumentAmount(int32_t code) {
-    mvprintw(0, 0, "%d    ~~~~", code);
-    getch();
     int8_t output = 0;
     code += 1;
     while (true) {
@@ -1832,9 +1836,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 value_t *tempValue = createVariable(tempBuffer);
                 tempValue->type = VALUE_TYPE_FUNCTION;
                 *(int32_t *)(tempValue->data) = tempStartCode;
-                mvprintw(0, 0, "%d     ", tempStartCode);
-                getch();
                 pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+                
+                dumpMemory();
+                endwin();
+                exit(0);
             }
             if (tempShouldDisplayRunning) {
                 clearDisplay();

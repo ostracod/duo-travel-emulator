@@ -904,6 +904,10 @@ static void readProgMemText(int8_t *destination, const int8_t *text) {
     }
 }
 
+static void resetHeap() {
+    firstAllocation = NULL;
+}
+
 static int8_t *allocate(int16_t size, int8_t type) {
     int8_t *tempPreviousAllocation = NULL;
     int8_t *tempNextAllocation = firstAllocation;
@@ -2011,6 +2015,7 @@ static expressionResult_t runCode(int32_t address) {
 }
 
 static void runFile(int32_t address) {
+    resetHeap();
     int32_t tempCode = address + FILE_DATA_OFFSET;
     clearDisplay();
     displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
@@ -2021,6 +2026,7 @@ static void runFile(int32_t address) {
     *(branch_t **)(globalScope + SCOPE_BRANCH_OFFSET) = NULL;
     pushBranch(BRANCH_ACTION_RUN, 0);
     runCode(tempCode);
+    resetHeap();
 }
 
 static void editFile(int32_t address) {

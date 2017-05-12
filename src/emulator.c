@@ -1830,10 +1830,20 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     pushBranch(BRANCH_ACTION_RUN, 0);
                 }
             }
+            if (tempFunction == SYMBOL_WHILE) {
+                if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
+                    pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+                } else {
+                    pushBranch(BRANCH_ACTION_LOOP, tempStartCode);
+                }
+            }
             if (tempFunction == SYMBOL_END) {
-                popBranch();
-                // TODO: Handle loop.
-                
+                if (tempBranch->action == BRANCH_ACTION_LOOP) {
+                    tempBranch->action = BRANCH_ACTION_RUN;
+                    code = tempBranch->address;
+                } else {
+                    popBranch();
+                }
             }
             if (tempFunction == SYMBOL_FUNCTION) {
                 uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
@@ -1862,7 +1872,10 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         }
         while (true) {
             uint8_t tempSymbol = readStorageInt8(code);
-            if (tempSymbol == ':' || tempSymbol == ';') {
+            if (tempSymbol == SYMBOL_INCREMENT) {
+                code += 1;
+                *(float *)(tempResult.destination->data) += 1;
+            } else if (tempSymbol == ':' || tempSymbol == ';') {
                 code += 1;
                 int32_t tempCode = *(int32_t *)(tempResult.value.data);
                 int8_t tempArgumentAmount = getCustomFunctionArgumentAmount(tempCode);
@@ -1949,6 +1962,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     }
                     if (tempSymbol == '*') {
                         *(float *)&(tempResult.value.data) *= *(float *)&(tempResult2.value.data);
+                    }
+                    if (tempSymbol == '>') {
+                        *(float *)&(tempResult.value.data) = *(float *)&(tempResult.value.data) > *(float *)&(tempResult2.value.data);
+                    }
+                    if (tempSymbol == '<') {
+                        *(float *)&(tempResult.value.data) = *(float *)&(tempResult.value.data) < *(float *)&(tempResult2.value.data);
                     }
                     if (tempSymbol == '=') {
                         if (tempResult.destination == NULL) {

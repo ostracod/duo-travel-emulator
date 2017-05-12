@@ -1838,11 +1838,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 }
             }
             if (tempFunction == SYMBOL_END) {
-                if (tempBranch->action == BRANCH_ACTION_LOOP) {
-                    tempBranch->action = BRANCH_ACTION_RUN;
-                    code = tempBranch->address;
-                } else {
-                    popBranch();
+                int8_t tempAction = tempBranch->action;
+                int32_t tempAddress = tempBranch->address;
+                popBranch();
+                if (tempAction == BRANCH_ACTION_LOOP) {
+                    code = tempAddress;
                 }
             }
             if (tempFunction == SYMBOL_FUNCTION) {

@@ -1736,6 +1736,28 @@ static int8_t getCustomFunctionArgumentAmount(int32_t code) {
     return output;
 }
 
+static int16_t getStringLiteralLength(int32_t code) {
+    int16_t output = 0;
+    int8_t tempIsEscaped = false;
+    while (true) {
+        uint8_t tempSymbol = readStorageInt8(code);
+        if (tempIsEscaped) {
+            output += 1;
+            tempIsEscaped = false;
+        } else {
+            if (tempSymbol == '\\') {
+                tempIsEscaped = true;
+            } else if (tempSymbol == '"') {
+                break;
+            } else {
+                output += 1;
+            }
+        }
+        code += 1;
+    }
+    return output;
+}
+
 static expressionResult_t runCode(int32_t address);
 
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
@@ -1786,6 +1808,39 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempResult.destination != NULL) {
                 tempResult.value = *(tempResult.destination);
             }
+        } else if (tempSymbol == '"') {
+            code += 1;
+            int16_t tempLength = getStringLiteralLength(code);
+            int8_t *tempString = createEmptyString(tempLength);
+            int8_t *tempStringContents = *(int8_t **)tempString;
+            int16_t index = 0;
+            int8_t tempIsEscaped = false;
+            while (true) {
+                uint8_t tempSymbol = readStorageInt8(code);
+                if (tempIsEscaped) {
+                    if (tempSymbol == 'N') {
+                        *(tempStringContents + STRING_DATA_OFFSET + index) = '\n';
+                    } else {
+                        *(tempStringContents + STRING_DATA_OFFSET + index) = tempSymbol;
+                    }
+                    index += 1;
+                    tempIsEscaped = false;
+                } else {
+                    if (tempSymbol == '\\') {
+                        tempIsEscaped = true;
+                    } else if (tempSymbol == '"') {
+                        code += 1;
+                        break;
+                    } else {
+                        *(tempStringContents + STRING_DATA_OFFSET + index) = tempSymbol;
+                        index += 1;
+                    }
+                }
+                code += 1;
+            }
+            *(tempStringContents + STRING_DATA_OFFSET + index) = 0;
+            tempResult.value.type = VALUE_TYPE_STRING;
+            *(int8_t **)(tempResult.value.data) = tempString;
         } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
             uint8_t tempFunction = tempSymbol;
             code += 1;

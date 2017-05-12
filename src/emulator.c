@@ -1747,7 +1747,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
     int8_t tempShouldRun = true;
     if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT || tempBranch->action == BRANCH_ACTION_IGNORE_HARD) {
         tempShouldRun = false;
-        if (tempSymbol == SYMBOL_IF || tempSymbol == SYMBOL_FUNCTION) {
+        if (tempSymbol == SYMBOL_IF || tempSymbol == SYMBOL_WHILE || tempSymbol == SYMBOL_FUNCTION) {
             pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
             code = skipStorageLine(code);
         } else if (tempSymbol == SYMBOL_END) {

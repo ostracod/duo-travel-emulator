@@ -1878,8 +1878,10 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         }
                         tempArgumentList[index] = tempResult2.value;
                         code = tempResult2.nextCode;
-                        // TODO: Check for comma.
-                        code += 1;
+                        uint8_t tempSymbol = readStorageInt8(code);
+                        if (tempSymbol == ',') {
+                            code += 1;
+                        }
                         index += 1;
                     }
                     int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
@@ -1890,7 +1892,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     pushBranch(BRANCH_ACTION_RUN, 0);
                     tempCode += 1;
                     index = 0;
-                    while (index < tempArgumentAmount) {
+                    while (index < tempArgumentAmount + 1) {
                         uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
                         int8_t tempIndex = 0;
                         while (true) {

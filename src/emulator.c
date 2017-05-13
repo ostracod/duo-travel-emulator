@@ -1981,7 +1981,31 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             *(tempStringContents + STRING_DATA_OFFSET + index) = 0;
             tempResult.value.type = VALUE_TYPE_STRING;
             *(int8_t **)(tempResult.value.data) = tempString;
-        } if (tempSymbol == '(') {
+        } else if (tempSymbol == '[') {
+            code += 1;
+            int8_t *tempList = createEmptyList(0);
+            int16_t index = 0;
+            tempResult.value.type = VALUE_TYPE_LIST;
+            *(int8_t **)(tempResult.value.data) = tempList;
+            while (true) {
+                uint8_t tempSymbol = readStorageInt8(code);
+                code += 1;
+                if (tempSymbol == ']') {
+                    break;
+                }
+                // TODO: Check for comma.
+                expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
+                // Treasure does not need to be tracked because it will
+                // be immediately inserted into the tracked list.
+                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                    tempResult.status = tempResult2.status;
+                    return tempResult;
+                }
+                code = tempResult2.nextCode;
+                insertListValue(tempList, index, &(tempResult2.value));
+                index += 1;
+            }
+        } else if (tempSymbol == '(') {
             code += 1;
             expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
             firstTreasureTracker = &tempTreasureTracker;

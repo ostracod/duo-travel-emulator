@@ -2166,13 +2166,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         *(float *)&(tempResult.value.data) = tempOperand1Int % tempOperand2Int;
                     }
                     if (tempSymbol == SYMBOL_BOOLEAN_AND) {
-                        *(float *)&(tempResult.value.data) = (tempOperand1Float != 0.0 & tempOperand2Float != 0.0);
+                        *(float *)&(tempResult.value.data) = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
                     }
                     if (tempSymbol == SYMBOL_BOOLEAN_OR) {
-                        *(float *)&(tempResult.value.data) = (tempOperand1Float != 0.0 | tempOperand2Float != 0.0);
+                        *(float *)&(tempResult.value.data) = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
                     }
                     if (tempSymbol == SYMBOL_BOOLEAN_XOR) {
-                        *(float *)&(tempResult.value.data) = (tempOperand1Float != 0.0 ^ tempOperand2Float != 0.0);
+                        *(float *)&(tempResult.value.data) = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
                     }
                     if (tempSymbol == '&') {
                         *(float *)&(tempResult.value.data) = (tempOperand1Int & tempOperand2Int);
@@ -2232,13 +2232,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         *(float *)&(tempResult.destination->data) = tempOperand1Int % tempOperand2Int;
                     }
                     if (tempSymbol == SYMBOL_BOOLEAN_AND_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = (tempOperand1Float != 0.0 & tempOperand2Float != 0.0);
+                        *(float *)&(tempResult.destination->data) = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
                     }
                     if (tempSymbol == SYMBOL_BOOLEAN_OR_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = (tempOperand1Float != 0.0 | tempOperand2Float != 0.0);
+                        *(float *)&(tempResult.destination->data) = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
                     }
                     if (tempSymbol == SYMBOL_BOOLEAN_XOR_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = (tempOperand1Float != 0.0 ^ tempOperand2Float != 0.0);
+                        *(float *)&(tempResult.destination->data) = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
                     }
                     if (tempSymbol == SYMBOL_BITWISE_AND_ASSIGN) {
                         *(float *)&(tempResult.destination->data) = (tempOperand1Int & tempOperand2Int);

@@ -45,7 +45,7 @@
 
 #define ALLOCATION_TYPE_POINTER 1
 #define ALLOCATION_TYPE_STRING 2
-#define ALLOCATION_TYPE_LIST 4
+#define ALLOCATION_TYPE_LIST 3
 
 #define STRING_LENGTH_OFFSET 0
 #define STRING_DATA_OFFSET (STRING_LENGTH_OFFSET + 2)
@@ -707,6 +707,8 @@ int8_t textEditorSymbolIndex[SYMBOL_SET_AMOUNT];
 int8_t textEditorNumberOnly;
 int8_t *globalScope;
 int8_t *localScope;
+int16_t commandsSinceMarkAndSweep = 0;
+int16_t allocationsSinceMarkAndSweep = 0;
 
 int8_t pgm_read_byte(const int8_t *pointer) {
     return *pointer;
@@ -962,14 +964,11 @@ static int8_t *allocate(int16_t size, int8_t type) {
     if (tempNextAllocation != NULL) {
         *(int8_t **)(tempNextAllocation - ALLOCATION_PREVIOUS_OFFSET) = output;
     }
+    allocationsSinceMarkAndSweep += 1;
     return output;
 }
 
 static void deallocate(int8_t *allocation) {
-    int8_t tempType = *(int8_t *)(allocation - ALLOCATION_TYPE_OFFSET);
-    if (tempType == ALLOCATION_TYPE_POINTER) {
-        deallocate(*(int8_t **)allocation);
-    }
     int8_t *tempPreviousAllocation = *(int8_t **)(allocation - ALLOCATION_PREVIOUS_OFFSET);
     int8_t *tempNextAllocation = *(int8_t **)(allocation - ALLOCATION_NEXT_OFFSET);
     if (tempPreviousAllocation == NULL) {
@@ -980,6 +979,11 @@ static void deallocate(int8_t *allocation) {
     if (tempNextAllocation != NULL) {
         *(int8_t **)(tempNextAllocation - ALLOCATION_PREVIOUS_OFFSET) = tempPreviousAllocation;
     }
+}
+
+static void deallocatePointer(int8_t *allocation) {
+    deallocate(*(int8_t **)allocation);
+    deallocate(allocation);
 }
 
 static int8_t *createEmptyString(int16_t length) {
@@ -1259,24 +1263,24 @@ static int8_t menuWithOptionsFromProgMem(int8_t *title, const int8_t **optionLis
     while (index < optionAmount) {
         value_t *tempValue = tempListContents + index;
         int8_t *tempString = *(int8_t **)&(tempValue->data);
-        deallocate(tempString);
+        deallocatePointer(tempString);
         index += 1;
     }
-    deallocate(tempList);
+    deallocatePointer(tempList);
     return output;
 }
 
 static int8_t menuWithTitleFromProgMem(const int8_t *title, int8_t *optionList) {
     int8_t *tempTitle = createStringFromProgMem(title);
     int8_t output = menu(tempTitle, optionList);
-    deallocate(tempTitle);
+    deallocatePointer(tempTitle);
     return output;
 }
 
 static int8_t menuFromProgMem(const int8_t *title, const int8_t **optionList, int8_t optionAmount) {
     int8_t *tempTitle = createStringFromProgMem(title);
     int8_t output = menuWithOptionsFromProgMem(tempTitle, optionList, optionAmount);
-    deallocate(tempTitle);
+    deallocatePointer(tempTitle);
     return output;
 }
 
@@ -1784,6 +1788,71 @@ static void initializeTreasureTracker(treasureTracker_t *treasureTracker, int8_t
     firstTreasureTracker = treasureTracker;
 }
 
+static void markValueAsReachable(value_t *value) {
+    if (value->type == VALUE_TYPE_STRING) {
+        int8_t *tempPointer = *(int8_t **)(value->data);
+        int8_t *tempString = *(int8_t **)tempPointer;
+        *(int8_t *)(tempPointer - ALLOCATION_IS_REACHABLE_OFFSET) = true;
+        *(int8_t *)(tempString - ALLOCATION_IS_REACHABLE_OFFSET) = true;
+    }
+    if (value->type == VALUE_TYPE_LIST) {
+        int8_t *tempPointer = *(int8_t **)(value->data);
+        int8_t *tempList = *(int8_t **)tempPointer;
+        // Dont stay in a cycle forever.
+        if (!*(int8_t *)(tempPointer - ALLOCATION_IS_REACHABLE_OFFSET)) {
+            *(int8_t *)(tempPointer - ALLOCATION_IS_REACHABLE_OFFSET) = true;
+            *(int8_t *)(tempList - ALLOCATION_IS_REACHABLE_OFFSET) = true;
+            int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+            value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET);
+            int16_t index = 0;
+            while (index < tempLength) {
+                markValueAsReachable(tempValue + index);
+                index += 1;
+            }
+        }
+    }
+}
+
+static void markAndSweep() {
+    int8_t *tempAllocation = firstAllocation;
+    while (tempAllocation != NULL) {
+        *(int8_t *)(tempAllocation - ALLOCATION_IS_REACHABLE_OFFSET) = false;
+        tempAllocation = *(int8_t **)(tempAllocation - ALLOCATION_NEXT_OFFSET);
+    }
+    treasureTracker_t *tempTreasureTracker = firstTreasureTracker;
+    while (tempTreasureTracker != NULL) {
+        if (tempTreasureTracker->type == TREASURE_TYPE_VALUE) {
+            markValueAsReachable((value_t *)(tempTreasureTracker->treasure));
+        }
+        if (tempTreasureTracker->type == TREASURE_TYPE_VALUE_ARRAY) {
+            int8_t index = 0;
+            while (index < tempTreasureTracker->amount) {
+                markValueAsReachable((value_t *)(tempTreasureTracker->treasure) + index);
+                index += 1;
+            }
+        }
+        if (tempTreasureTracker->type == TREASURE_TYPE_SCOPE) {
+            int8_t *tempScope = (int8_t *)(tempTreasureTracker->treasure);
+            int8_t *tempVariable = *(int8_t **)(tempScope + SCOPE_VARIABLE_OFFSET);
+            while (tempVariable != NULL) {
+                markValueAsReachable((value_t *)(tempVariable + VARIABLE_VALUE_OFFSET));
+                tempVariable = *(int8_t **)(tempVariable + VARIABLE_NEXT_OFFSET);
+            }
+        }
+        tempTreasureTracker = tempTreasureTracker->next;
+    }
+    tempAllocation = firstAllocation;
+    while (tempAllocation != NULL) {
+        int8_t *tempNextAllocation = *(int8_t **)(tempAllocation - ALLOCATION_NEXT_OFFSET);
+        if (!*(int8_t *)(tempAllocation - ALLOCATION_IS_REACHABLE_OFFSET)) {
+            deallocate(tempAllocation);
+        }
+        tempAllocation = tempNextAllocation;
+    }
+    commandsSinceMarkAndSweep = 0;
+    allocationsSinceMarkAndSweep = 0;
+}
+
 static expressionResult_t runCode(int32_t address);
 
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
@@ -2112,7 +2181,11 @@ static expressionResult_t runCode(int32_t address) {
             if (tempResult.status == EVALUATION_STATUS_QUIT || tempResult.status == EVALUATION_STATUS_RETURN) {
                 return tempResult;
             }
+            commandsSinceMarkAndSweep += 1;
             address = tempResult.nextCode;
+        }
+        if (allocationsSinceMarkAndSweep > 5 || commandsSinceMarkAndSweep > 30) {
+            markAndSweep();
         }
     }
 }
@@ -2120,6 +2193,8 @@ static expressionResult_t runCode(int32_t address) {
 static void runFile(int32_t address) {
     resetHeap();
     firstTreasureTracker = NULL;
+    commandsSinceMarkAndSweep = 0;
+    allocationsSinceMarkAndSweep = 0;
     int32_t tempCode = address + FILE_DATA_OFFSET;
     clearDisplay();
     displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
@@ -2129,6 +2204,8 @@ static void runFile(int32_t address) {
     *(int8_t **)(globalScope + SCOPE_VARIABLE_OFFSET) = NULL;
     *(branch_t **)(globalScope + SCOPE_BRANCH_OFFSET) = NULL;
     pushBranch(BRANCH_ACTION_RUN, 0);
+    treasureTracker_t tempTreasureTracker;
+    initializeTreasureTracker(&tempTreasureTracker, TREASURE_TYPE_SCOPE, localScope);
     runCode(tempCode);
     resetHeap();
 }
@@ -2173,7 +2250,7 @@ static void promptFileAction(int32_t address) {
             readStorage(tempName, address + FILE_NAME_OFFSET, FILE_NAME_MAXIMUM_LENGTH + 1);
             int8_t *tempTitle = createString(tempName);
             tempResult = menuWithOptionsFromProgMem(tempTitle, MENU_FILE, sizeof(MENU_FILE) / sizeof(*MENU_FILE));
-            deallocate(tempTitle);
+            deallocatePointer(tempTitle);
         }
         if (tempResult < 0) {
             break;
@@ -2236,10 +2313,10 @@ static void mainMenu() {
         while (index < tempListLength) {
             value_t *tempValue = tempListContents + index;
             int8_t *tempString = *(int8_t **)&(tempValue->data);
-            deallocate(tempString);
+            deallocatePointer(tempString);
             index += 1;
         }
-        deallocate(tempList);
+        deallocatePointer(tempList);
         if (tempResult == 0) {
             promptCreateFile();
         } else if (tempResult > 0) {

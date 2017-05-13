@@ -1938,6 +1938,21 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             *(tempStringContents + STRING_DATA_OFFSET + index) = 0;
             tempResult.value.type = VALUE_TYPE_STRING;
             *(int8_t **)(tempResult.value.data) = tempString;
+        } if (tempSymbol == '(') {
+            code += 1;
+            expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
+            firstTreasureTracker = &tempTreasureTracker;
+            treasureTracker_t tempTreasureTracker2;
+            initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
+            if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
+                tempResult.status = tempResult2.status;
+                return tempResult;
+            }
+            code = tempResult2.nextCode;
+            tempResult.destination = tempResult2.destination;
+            tempResult.value = tempResult2.value;
+            // TODO: Check for parenthesis.
+            code += 1;
         } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
             uint8_t tempFunction = tempSymbol;
             code += 1;
@@ -2023,6 +2038,10 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             firstTreasureTracker = &tempTreasureTracker;
             treasureTracker_t tempTreasureTracker2;
             initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
+            if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
+                tempResult.status = tempResult2.status;
+                return tempResult;
+            }
             code = tempResult2.nextCode;
             if (tempSymbol == '!') {
                 tempResult.value.type = VALUE_TYPE_NUMBER;

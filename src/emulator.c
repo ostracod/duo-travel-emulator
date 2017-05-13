@@ -2139,6 +2139,25 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 code += 1;
                 *(float *)(tempResult.destination->data) -= 1.0;
                 *(float *)(tempResult.value.data) = *(float *)(tempResult.destination->data);
+            } else if (tempSymbol == '[') {
+                code += 1;
+                expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
+                firstTreasureTracker = &tempTreasureTracker;
+                treasureTracker_t tempTreasureTracker2;
+                initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
+                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                    tempResult.status = tempResult2.status;
+                    return tempResult;
+                }
+                code = tempResult2.nextCode;
+                // TODO: Check for bracket.
+                code += 1;
+                int16_t index = *(float *)(tempResult2.value.data);
+                int8_t *tempPointer = *(int8_t **)(tempResult.value.data);
+                int8_t *tempList = *(int8_t **)tempPointer;
+                value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
+                tempResult.destination = tempValue;
+                tempResult.value = *tempValue;
             } else if (tempSymbol == ':' || tempSymbol == ';') {
                 code += 1;
                 int32_t tempCode = *(int32_t *)(tempResult.value.data);
@@ -2224,7 +2243,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     if (tempPrecedence >= precedence) {
                         break;
                     }
-                    expressionResult_t tempResult2 = evaluateExpression(code + 1, tempPrecedence, false);
+                    code += 1;
+                    expressionResult_t tempResult2 = evaluateExpression(code, tempPrecedence, false);
                     firstTreasureTracker = &tempTreasureTracker;
                     treasureTracker_t tempTreasureTracker2;
                     initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
@@ -2232,6 +2252,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         tempResult.status = tempResult2.status;
                         return tempResult;
                     }
+                    code = tempResult2.nextCode;
                     float tempOperand1Float = *(float *)&(tempResult.value.data);
                     float tempOperand2Float = *(float *)&(tempResult2.value.data);
                     int32_t tempOperand1Int = (int32_t)tempOperand1Float;
@@ -2341,11 +2362,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     if (tempSymbol == SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
                         *(float *)&(tempResult.destination->data) = (tempOperand1Int >> tempOperand2Int);
                     }
-                    code = tempResult2.nextCode;
                 } else {
+                    // TODO: Check for invalid symbols.
                     break;
                 }
             }
+            firstTreasureTracker = &tempTreasureTracker;
         }
     }
     tempResult.nextCode = code;

@@ -1944,7 +1944,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             firstTreasureTracker = &tempTreasureTracker;
             treasureTracker_t tempTreasureTracker2;
             initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
-            if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
+            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                 tempResult.status = tempResult2.status;
                 return tempResult;
             }
@@ -1969,7 +1969,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempExpressionList[index] = code;
                 expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
                 firstTreasureTracker = &tempTreasureTracker2;
-                if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
+                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                     tempResult.status = tempResult2.status;
                     return tempResult;
                 }
@@ -2038,7 +2038,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             firstTreasureTracker = &tempTreasureTracker;
             treasureTracker_t tempTreasureTracker2;
             initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
-            if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
+            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                 tempResult.status = tempResult2.status;
                 return tempResult;
             }
@@ -2086,7 +2086,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     while (index < tempArgumentAmount) {
                         expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
                         firstTreasureTracker = &tempTreasureTracker2;
-                        if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
+                        if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                             tempResult.status = tempResult2.status;
                             return tempResult;
                         }
@@ -2135,7 +2135,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 }
                 expressionResult_t tempResult2 = runCode(tempCode);
                 firstTreasureTracker = &tempTreasureTracker3;
-                if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
+                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                     tempResult.status = tempResult2.status;
                     return tempResult;
                 }
@@ -2161,7 +2161,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     firstTreasureTracker = &tempTreasureTracker;
                     treasureTracker_t tempTreasureTracker2;
                     initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
-                    if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
+                    if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                         tempResult.status = tempResult2.status;
                         return tempResult;
                     }
@@ -2300,7 +2300,11 @@ static expressionResult_t runCode(int32_t address) {
         } else {
             expressionResult_t tempResult = evaluateExpression(address, 99, true);
             firstTreasureTracker = tempTreasureTracker;
-            if (tempResult.status == EVALUATION_STATUS_QUIT || tempResult.status == EVALUATION_STATUS_RETURN) {
+            if (tempResult.status == EVALUATION_STATUS_QUIT) {
+                return tempResult;
+            }
+            if (tempResult.status == EVALUATION_STATUS_RETURN) {
+                tempResult.status = EVALUATION_STATUS_NORMAL;
                 return tempResult;
             }
             commandsSinceMarkAndSweep += 1;

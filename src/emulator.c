@@ -986,6 +986,19 @@ static void deallocatePointer(int8_t *allocation) {
     deallocate(allocation);
 }
 
+static int8_t *resizeAllocation(int8_t *allocation, int16_t size) {
+    int16_t tempSize = *(int16_t *)(allocation - ALLOCATION_SIZE_OFFSET);
+    int8_t tempType = *(int8_t *)(allocation - ALLOCATION_TYPE_OFFSET);
+    int8_t *output = allocate(size, tempType);
+    if (size > tempSize) {
+        memcpy(output, allocation, tempSize);
+    } else {
+        memcpy(output, allocation, size);
+    }
+    deallocate(allocation);
+    return output;
+}
+
 static int8_t *createEmptyString(int16_t length) {
     int8_t *output = allocate(sizeof(int8_t *), ALLOCATION_TYPE_POINTER);
     int8_t *tempString = allocate(STRING_DATA_OFFSET + length + 1, ALLOCATION_TYPE_STRING);
@@ -1022,6 +1035,21 @@ static int8_t *createEmptyList(int16_t length) {
         index += 1;
     }
     return output;
+}
+
+static void insertListValue(int8_t *list, int16_t index, value_t *value) {
+    int8_t *tempList = *(int8_t **)list;
+    int16_t tempSize = *(int16_t *)(tempList - ALLOCATION_SIZE_OFFSET);
+    int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+    if (LIST_DATA_OFFSET + (tempLength + 1) * sizeof(value_t) > tempSize) {
+        tempList = resizeAllocation(tempList, LIST_DATA_OFFSET + (tempLength + 1) * sizeof(value_t) * 2);
+        *(int8_t **)list = tempList;
+    }
+    value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
+    memmove(tempValue + 1, tempValue, (tempLength - index) * sizeof(value_t));
+    *tempValue = *value;
+    tempLength += 1;
+    *(int16_t *)(tempList + LIST_LENGTH_OFFSET) = tempLength;
 }
 
 static int8_t getSymbolWidth(uint8_t symbol) {

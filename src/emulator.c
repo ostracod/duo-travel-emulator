@@ -1905,6 +1905,21 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempResult.destination != NULL) {
                 tempResult.value = *(tempResult.destination);
             }
+        } else if (tempSymbol == '\'') {
+            code += 1;
+            uint8_t tempSymbol = readStorageInt8(code);
+            code += 1;
+            if (tempSymbol == '\\') {
+                tempSymbol = readStorageInt8(code);
+                code += 1;
+                if (tempSymbol == 'N') {
+                    tempSymbol = '\n';
+                }
+            }
+            // TODO: Check for apostrophe.
+            code += 1;
+            tempResult.value.type = VALUE_TYPE_NUMBER;
+            *(float *)&(tempResult.value.data) = tempSymbol;
         } else if (tempSymbol == '"') {
             code += 1;
             int16_t tempLength = getStringLiteralLength(code);

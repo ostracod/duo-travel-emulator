@@ -90,6 +90,10 @@
 #define BRANCH_ACTION_IGNORE_HARD 2
 #define BRANCH_ACTION_LOOP 3
 
+#define TREASURE_TYPE_VALUE 0
+#define TREASURE_TYPE_VALUE_ARRAY 1
+#define TREASURE_TYPE_SCOPE 2
+
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
 const int8_t SYMBOL_TEXT_BOOLEAN_XOR[] PROGMEM = "^^";
@@ -671,6 +675,19 @@ typedef struct branch {
     int32_t address;
 } branch_t;
 
+typedef struct treasureTracker treasureTracker_t;
+
+// "Treasure" is a term I made up.
+// It is the opposite of garbage.
+// In other words, treasure is reachable, active memory.
+
+typedef struct treasureTracker {
+    treasureTracker_t *next;
+    int8_t type;
+    int8_t amount;
+    void *treasure;
+} treasureTracker_t;
+
 WINDOW *window;
 int32_t windowWidth;
 int32_t windowHeight;
@@ -680,6 +697,7 @@ FILE *storageFile;
 
 int8_t memory[1200];
 int8_t *firstAllocation = NULL;
+treasureTracker_t *firstTreasureTracker = NULL;
 int8_t *textEditorText;
 int16_t textEditorIndex;
 int16_t textEditorLength;
@@ -1758,6 +1776,14 @@ static int16_t getStringLiteralLength(int32_t code) {
     return output;
 }
 
+static void initializeTreasureTracker(treasureTracker_t *treasureTracker, int8_t type, void *treasure) {
+    treasureTracker->next = firstTreasureTracker;
+    treasureTracker->type = type;
+    treasureTracker->amount = 0;
+    treasureTracker->treasure = treasure;
+    firstTreasureTracker = treasureTracker;
+}
+
 static expressionResult_t runCode(int32_t address);
 
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
@@ -1770,6 +1796,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
     tempResult.status = EVALUATION_STATUS_NORMAL;
     tempResult.destination = NULL;
     tempResult.value.type = VALUE_TYPE_MISSING;
+    treasureTracker_t tempTreasureTracker;
+    initializeTreasureTracker(&tempTreasureTracker, TREASURE_TYPE_VALUE, &(tempResult.value));
     int8_t tempShouldRun = true;
     if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT || tempBranch->action == BRANCH_ACTION_IGNORE_HARD) {
         tempShouldRun = false;
@@ -1850,15 +1878,19 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             }
             value_t tempArgumentList[tempArgumentAmount];
             int32_t tempExpressionList[tempArgumentAmount];
+            treasureTracker_t tempTreasureTracker2;
+            initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE_ARRAY, tempArgumentList);
             int8_t index = 0;
             while (index < tempArgumentAmount) {
                 tempExpressionList[index] = code;
                 expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
+                firstTreasureTracker = &tempTreasureTracker2;
                 if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
                     tempResult.status = tempResult2.status;
                     return tempResult;
                 }
                 tempArgumentList[index] = tempResult2.value;
+                tempTreasureTracker2.amount += 1;
                 code = tempResult2.nextCode;
                 if (index < tempArgumentAmount - 1) {
                     // TODO: Check for comma.
@@ -1919,6 +1951,9 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         } else if (isUnaryOperator(tempSymbol)) {
             code += 1;
             expressionResult_t tempResult2 = evaluateExpression(code, 0, false);
+            firstTreasureTracker = &tempTreasureTracker;
+            treasureTracker_t tempTreasureTracker2;
+            initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
             code = tempResult2.nextCode;
             if (tempSymbol == '!') {
                 tempResult.value.type = VALUE_TYPE_NUMBER;
@@ -1937,18 +1972,23 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             } else if (tempSymbol == ':' || tempSymbol == ';') {
                 code += 1;
                 int32_t tempCode = *(int32_t *)(tempResult.value.data);
+                treasureTracker_t tempTreasureTracker3;
                 int8_t tempArgumentAmount = getCustomFunctionArgumentAmount(tempCode);
                 int8_t *tempPreviousScope = localScope;
                 {
                     value_t tempArgumentList[tempArgumentAmount];
+                    treasureTracker_t tempTreasureTracker2;
+                    initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE_ARRAY, tempArgumentList);
                     int8_t index = 0;
                     while (index < tempArgumentAmount) {
                         expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
+                        firstTreasureTracker = &tempTreasureTracker2;
                         if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
                             tempResult.status = tempResult2.status;
                             return tempResult;
                         }
                         tempArgumentList[index] = tempResult2.value;
+                        tempTreasureTracker2.amount += 1;
                         code = tempResult2.nextCode;
                         uint8_t tempSymbol = readStorageInt8(code);
                         if (tempSymbol == ',') {
@@ -1962,6 +2002,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET) = NULL;
                     *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = NULL;
                     pushBranch(BRANCH_ACTION_RUN, 0);
+                    firstTreasureTracker = &tempTreasureTracker;
+                    initializeTreasureTracker(&tempTreasureTracker3, TREASURE_TYPE_SCOPE, localScope);
                     tempCode += 1;
                     index = 0;
                     while (index < tempArgumentAmount + 1) {
@@ -1989,6 +2031,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     }
                 }
                 expressionResult_t tempResult2 = runCode(tempCode);
+                firstTreasureTracker = &tempTreasureTracker3;
                 if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
                     tempResult.status = tempResult2.status;
                     return tempResult;
@@ -2012,6 +2055,9 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         break;
                     }
                     expressionResult_t tempResult2 = evaluateExpression(code + 1, tempPrecedence, false);
+                    firstTreasureTracker = &tempTreasureTracker;
+                    treasureTracker_t tempTreasureTracker2;
+                    initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
                     if (tempResult2.status != EVALUATION_STATUS_NORMAL && tempResult2.status != EVALUATION_STATUS_RETURN) {
                         tempResult.status = tempResult2.status;
                         return tempResult;
@@ -2049,6 +2095,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
 }
 
 static expressionResult_t runCode(int32_t address) {
+    treasureTracker_t *tempTreasureTracker = firstTreasureTracker;
     while (true) {
         uint8_t tempSymbol = readStorageInt8(address);
         if (tempSymbol == '\n') {
@@ -2061,6 +2108,7 @@ static expressionResult_t runCode(int32_t address) {
             return tempResult;
         } else {
             expressionResult_t tempResult = evaluateExpression(address, 99, true);
+            firstTreasureTracker = tempTreasureTracker;
             if (tempResult.status == EVALUATION_STATUS_QUIT || tempResult.status == EVALUATION_STATUS_RETURN) {
                 return tempResult;
             }
@@ -2071,6 +2119,7 @@ static expressionResult_t runCode(int32_t address) {
 
 static void runFile(int32_t address) {
     resetHeap();
+    firstTreasureTracker = NULL;
     int32_t tempCode = address + FILE_DATA_OFFSET;
     clearDisplay();
     displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

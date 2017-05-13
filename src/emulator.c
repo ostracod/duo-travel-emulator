@@ -169,7 +169,7 @@ const int8_t SYMBOL_TEXT_FILE_READ[] PROGMEM = "fRead:";
 const int8_t SYMBOL_TEXT_FILE_WRITE[] PROGMEM = "fWrite:";
 const int8_t SYMBOL_TEXT_FILE_IMPORT[] PROGMEM = "fImport:";
 
-const int8_t *SYMBOL_TEXT_LIST[] PROGMEM = {
+const int8_t * const SYMBOL_TEXT_LIST[] PROGMEM = {
     SYMBOL_TEXT_BOOLEAN_AND,
     SYMBOL_TEXT_BOOLEAN_OR,
     SYMBOL_TEXT_BOOLEAN_XOR,
@@ -564,7 +564,7 @@ const uint8_t SYMBOL_SET_VALUE[] PROGMEM = {
     SYMBOL_TYPE
 };
 
-const int8_t *SYMBOL_SET_LIST[] PROGMEM = {
+const int8_t * const SYMBOL_SET_LIST[] PROGMEM = {
     SYMBOL_SET_LETTERS,
     SYMBOL_SET_NUMBERS,
     SYMBOL_SET_PUNCTUATION,
@@ -586,7 +586,7 @@ const int8_t SYMBOL_SET_NAME_MATH[] PROGMEM = "Math";
 const int8_t SYMBOL_SET_NAME_INPUT_OUTPUT[] PROGMEM = "I/O";
 const int8_t SYMBOL_SET_NAME_VALUE[] PROGMEM = "Val";
 
-const int8_t *SYMBOL_SET_NAME_LIST[] PROGMEM = {
+const int8_t * const SYMBOL_SET_NAME_LIST[] PROGMEM = {
     SYMBOL_SET_NAME_LETTERS,
     SYMBOL_SET_NAME_NUMBERS,
     SYMBOL_SET_NAME_PUNCTUATION,
@@ -1247,7 +1247,7 @@ static int8_t menu(int8_t *title, int8_t *optionList) {
     }
 }
 
-static int8_t menuWithOptionsFromProgMem(int8_t *title, const int8_t **optionList, int8_t optionAmount) {
+static int8_t menuWithOptionsFromProgMem(int8_t *title, const int8_t * const *optionList, int8_t optionAmount) {
     int8_t *tempList = createEmptyList(optionAmount);
     value_t *tempListContents = (value_t *)(*(int8_t **)tempList + LIST_DATA_OFFSET);
     int8_t index = 0;
@@ -1277,7 +1277,7 @@ static int8_t menuWithTitleFromProgMem(const int8_t *title, int8_t *optionList) 
     return output;
 }
 
-static int8_t menuFromProgMem(const int8_t *title, const int8_t **optionList, int8_t optionAmount) {
+static int8_t menuFromProgMem(const int8_t *title, const int8_t * const *optionList, int8_t optionAmount) {
     int8_t *tempTitle = createStringFromProgMem(title);
     int8_t output = menuWithOptionsFromProgMem(tempTitle, optionList, optionAmount);
     deallocatePointer(tempTitle);
@@ -2026,18 +2026,33 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             code = tempResult2.nextCode;
             if (tempSymbol == '!') {
                 tempResult.value.type = VALUE_TYPE_NUMBER;
-                if (*(float *)&(tempResult2.value.data) == 0.0) {
-                    *(float *)&(tempResult.value.data) = 1.0;
-                } else {
-                    *(float *)&(tempResult.value.data) = 0.0;
-                }
+                *(float *)&(tempResult.value.data) = (*(float *)&(tempResult2.value.data) == 0.0);
+            }
+            if (tempSymbol == '~') {
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)&(tempResult.value.data) = ~(int32_t)*(float *)&(tempResult2.value.data);
+            }
+            if (tempSymbol == SYMBOL_INCREMENT) {
+                tempResult.destination = tempResult2.destination;
+                tempResult.value = tempResult2.value;
+                *(float *)(tempResult.destination->data) += 1.0;
+            }
+            if (tempSymbol == SYMBOL_DECREMENT) {
+                tempResult.destination = tempResult2.destination;
+                tempResult.value = tempResult2.value;
+                *(float *)(tempResult.destination->data) += 1.0;
             }
         }
         while (true) {
             uint8_t tempSymbol = readStorageInt8(code);
             if (tempSymbol == SYMBOL_INCREMENT) {
                 code += 1;
-                *(float *)(tempResult.destination->data) += 1;
+                *(float *)(tempResult.destination->data) += 1.0;
+                *(float *)(tempResult.value.data) = *(float *)(tempResult.destination->data);
+            } else if (tempSymbol == SYMBOL_DECREMENT) {
+                code += 1;
+                *(float *)(tempResult.destination->data) -= 1.0;
+                *(float *)(tempResult.value.data) = *(float *)(tempResult.destination->data);
             } else if (tempSymbol == ':' || tempSymbol == ';') {
                 code += 1;
                 int32_t tempCode = *(int32_t *)(tempResult.value.data);
@@ -2131,17 +2146,66 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         tempResult.status = tempResult2.status;
                         return tempResult;
                     }
+                    float tempOperand1Float = *(float *)&(tempResult.value.data);
+                    float tempOperand2Float = *(float *)&(tempResult2.value.data);
+                    int32_t tempOperand1Int = (int32_t)tempOperand1Float;
+                    int32_t tempOperand2Int = (int32_t)tempOperand2Float;
                     if (tempSymbol == '+') {
-                        *(float *)&(tempResult.value.data) += *(float *)&(tempResult2.value.data);
+                        *(float *)&(tempResult.value.data) += tempOperand2Float;
+                    }
+                    if (tempSymbol == '-') {
+                        *(float *)&(tempResult.value.data) -= tempOperand2Float;
                     }
                     if (tempSymbol == '*') {
-                        *(float *)&(tempResult.value.data) *= *(float *)&(tempResult2.value.data);
+                        *(float *)&(tempResult.value.data) *= tempOperand2Float;
+                    }
+                    if (tempSymbol == '/') {
+                        *(float *)&(tempResult.value.data) /= tempOperand2Float;
+                    }
+                    if (tempSymbol == '%') {
+                        *(float *)&(tempResult.value.data) = tempOperand1Int % tempOperand2Int;
+                    }
+                    if (tempSymbol == SYMBOL_BOOLEAN_AND) {
+                        *(float *)&(tempResult.value.data) = (tempOperand1Float != 0.0 & tempOperand2Float != 0.0);
+                    }
+                    if (tempSymbol == SYMBOL_BOOLEAN_OR) {
+                        *(float *)&(tempResult.value.data) = (tempOperand1Float != 0.0 | tempOperand2Float != 0.0);
+                    }
+                    if (tempSymbol == SYMBOL_BOOLEAN_XOR) {
+                        *(float *)&(tempResult.value.data) = (tempOperand1Float != 0.0 ^ tempOperand2Float != 0.0);
+                    }
+                    if (tempSymbol == '&') {
+                        *(float *)&(tempResult.value.data) = (tempOperand1Int & tempOperand2Int);
+                    }
+                    if (tempSymbol == '|') {
+                        *(float *)&(tempResult.value.data) = (tempOperand1Int | tempOperand2Int);
+                    }
+                    if (tempSymbol == '^') {
+                        *(float *)&(tempResult.value.data) = (tempOperand1Int ^ tempOperand2Int);
+                    }
+                    if (tempSymbol == SYMBOL_BITSHIFT_LEFT) {
+                        *(float *)&(tempResult.value.data) = (tempOperand1Int << tempOperand2Int);
+                    }
+                    if (tempSymbol == SYMBOL_BITSHIFT_RIGHT) {
+                        *(float *)&(tempResult.value.data) = (tempOperand1Int >> tempOperand2Int);
                     }
                     if (tempSymbol == '>') {
-                        *(float *)&(tempResult.value.data) = *(float *)&(tempResult.value.data) > *(float *)&(tempResult2.value.data);
+                        *(float *)&(tempResult.value.data) = tempOperand1Float > tempOperand2Float;
                     }
                     if (tempSymbol == '<') {
-                        *(float *)&(tempResult.value.data) = *(float *)&(tempResult.value.data) < *(float *)&(tempResult2.value.data);
+                        *(float *)&(tempResult.value.data) = tempOperand1Float < tempOperand2Float;
+                    }
+                    if (tempSymbol == SYMBOL_EQUAL) {
+                        *(float *)&(tempResult.value.data) = tempOperand1Float == tempOperand2Float;
+                    }
+                    if (tempSymbol == SYMBOL_NOT_EQUAL) {
+                        *(float *)&(tempResult.value.data) = tempOperand1Float != tempOperand2Float;
+                    }
+                    if (tempSymbol == SYMBOL_GREATER_OR_EQUAL) {
+                        *(float *)&(tempResult.value.data) = tempOperand1Float >= tempOperand2Float;
+                    }
+                    if (tempSymbol == SYMBOL_LESS_OR_EQUAL) {
+                        *(float *)&(tempResult.value.data) = tempOperand1Float <= tempOperand2Float;
                     }
                     if (tempSymbol == '=') {
                         if (tempResult.destination == NULL) {
@@ -2151,6 +2215,45 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             tempResult.destination = createVariable(tempBuffer);
                         }
                         *(tempResult.destination) = tempResult2.value;
+                    }
+                    if (tempSymbol == SYMBOL_ADD_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) += tempOperand2Float;
+                    }
+                    if (tempSymbol == SYMBOL_SUBTRACT_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) -= tempOperand2Float;
+                    }
+                    if (tempSymbol == SYMBOL_MULTIPLY_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) *= tempOperand2Float;
+                    }
+                    if (tempSymbol == SYMBOL_DIVIDE_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) /= tempOperand2Float;
+                    }
+                    if (tempSymbol == SYMBOL_MODULUS_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) = tempOperand1Int % tempOperand2Int;
+                    }
+                    if (tempSymbol == SYMBOL_BOOLEAN_AND_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) = (tempOperand1Float != 0.0 & tempOperand2Float != 0.0);
+                    }
+                    if (tempSymbol == SYMBOL_BOOLEAN_OR_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) = (tempOperand1Float != 0.0 | tempOperand2Float != 0.0);
+                    }
+                    if (tempSymbol == SYMBOL_BOOLEAN_XOR_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) = (tempOperand1Float != 0.0 ^ tempOperand2Float != 0.0);
+                    }
+                    if (tempSymbol == SYMBOL_BITWISE_AND_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) = (tempOperand1Int & tempOperand2Int);
+                    }
+                    if (tempSymbol == SYMBOL_BITWISE_OR_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) = (tempOperand1Int | tempOperand2Int);
+                    }
+                    if (tempSymbol == SYMBOL_BITWISE_XOR_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) = (tempOperand1Int ^ tempOperand2Int);
+                    }
+                    if (tempSymbol == SYMBOL_BITSHIFT_LEFT_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) = (tempOperand1Int << tempOperand2Int);
+                    }
+                    if (tempSymbol == SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
+                        *(float *)&(tempResult.destination->data) = (tempOperand1Int >> tempOperand2Int);
                     }
                     code = tempResult2.nextCode;
                 } else {

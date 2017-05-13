@@ -70,6 +70,9 @@
 #define FILE_SIZE_OFFSET (FILE_NAME_OFFSET + FILE_NAME_MAXIMUM_LENGTH + 1)
 #define FILE_DATA_OFFSET (FILE_SIZE_OFFSET + 2)
 
+#define DESTINATION_TYPE_VALUE 0
+#define DESTINATION_TYPE_SYMBOL 1
+
 #define EVALUATION_STATUS_NORMAL 0
 #define EVALUATION_STATUS_QUIT 1
 #define EVALUATION_STATUS_RETURN 2
@@ -661,7 +664,8 @@ typedef struct value {
 
 typedef struct expressionResult {
     int8_t status;
-    value_t *destination;
+    int8_t destinationType;
+    int8_t *destination;
     value_t value;
     int32_t nextCode;
 } expressionResult_t;
@@ -1929,9 +1933,10 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         } else if ((tempSymbol >= 'A' && tempSymbol <= 'Z') || tempSymbol == '_') {
             uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
             code = readStorageVariableName(tempBuffer, code);
-            tempResult.destination = findVariableValueByName(tempBuffer);
+            tempResult.destinationType = DESTINATION_TYPE_VALUE;
+            tempResult.destination = (int8_t *)findVariableValueByName(tempBuffer);
             if (tempResult.destination != NULL) {
-                tempResult.value = *(tempResult.destination);
+                tempResult.value = *(value_t *)(tempResult.destination);
             }
         } else if (tempSymbol == '\'') {
             code += 1;
@@ -2016,6 +2021,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 return tempResult;
             }
             code = tempResult2.nextCode;
+            tempResult.destinationType = tempResult2.destinationType;
             tempResult.destination = tempResult2.destination;
             tempResult.value = tempResult2.value;
             // TODO: Check for parenthesis.
@@ -2119,26 +2125,48 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 *(float *)&(tempResult.value.data) = ~(int32_t)*(float *)&(tempResult2.value.data);
             }
             if (tempSymbol == SYMBOL_INCREMENT) {
+                tempResult.destinationType = tempResult2.destinationType;
                 tempResult.destination = tempResult2.destination;
-                tempResult.value = tempResult2.value;
-                *(float *)(tempResult.destination->data) += 1.0;
+                if (tempResult2.destinationType == DESTINATION_TYPE_VALUE) {
+                    *(float *)(((value_t *)(tempResult.destination))->data) += 1.0;
+                    tempResult.value = *(value_t *)(tempResult.destination);
+                }
+                if (tempResult2.destinationType == DESTINATION_TYPE_SYMBOL) {
+                    *(uint8_t *)(tempResult.destination) += 1; 
+                    *(float *)(tempResult.value.data) = *(uint8_t *)(tempResult.destination);
+                }
             }
             if (tempSymbol == SYMBOL_DECREMENT) {
+                tempResult.destinationType = tempResult2.destinationType;
                 tempResult.destination = tempResult2.destination;
-                tempResult.value = tempResult2.value;
-                *(float *)(tempResult.destination->data) += 1.0;
+                if (tempResult2.destinationType == DESTINATION_TYPE_VALUE) {
+                    *(float *)(((value_t *)(tempResult.destination))->data) -= 1.0;
+                    tempResult.value = *(value_t *)(tempResult.destination);
+                }
+                if (tempResult2.destinationType == DESTINATION_TYPE_SYMBOL) {
+                    *(uint8_t *)(tempResult.destination) -= 1; 
+                    *(float *)(tempResult.value.data) = *(uint8_t *)(tempResult.destination);
+                }
             }
         }
         while (true) {
             uint8_t tempSymbol = readStorageInt8(code);
             if (tempSymbol == SYMBOL_INCREMENT) {
                 code += 1;
-                *(float *)(tempResult.destination->data) += 1.0;
-                *(float *)(tempResult.value.data) = *(float *)(tempResult.destination->data);
+                if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
+                    *(float *)(((value_t *)(tempResult.destination))->data) += 1.0;
+                }
+                if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
+                    *(uint8_t *)(tempResult.destination) += 1;
+                }
             } else if (tempSymbol == SYMBOL_DECREMENT) {
                 code += 1;
-                *(float *)(tempResult.destination->data) -= 1.0;
-                *(float *)(tempResult.value.data) = *(float *)(tempResult.destination->data);
+                if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
+                    *(float *)(((value_t *)(tempResult.destination))->data) -= 1.0;
+                }
+                if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
+                    *(uint8_t *)(tempResult.destination) -= 1;
+                }
             } else if (tempSymbol == '[') {
                 code += 1;
                 expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
@@ -2153,11 +2181,22 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 // TODO: Check for bracket.
                 code += 1;
                 int16_t index = *(float *)(tempResult2.value.data);
-                int8_t *tempPointer = *(int8_t **)(tempResult.value.data);
-                int8_t *tempList = *(int8_t **)tempPointer;
-                value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
-                tempResult.destination = tempValue;
-                tempResult.value = *tempValue;
+                if (tempResult.value.type == VALUE_TYPE_LIST) {
+                    int8_t *tempPointer = *(int8_t **)(tempResult.value.data);
+                    int8_t *tempList = *(int8_t **)tempPointer;
+                    value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
+                    tempResult.destinationType = DESTINATION_TYPE_VALUE;
+                    *(value_t **)&(tempResult.destination) = tempValue;
+                    tempResult.value = *tempValue;
+                } else if (tempResult.value.type == VALUE_TYPE_STRING) {
+                    int8_t *tempPointer = *(int8_t **)(tempResult.value.data);
+                    int8_t *tempString = *(int8_t **)tempPointer;
+                    uint8_t *tempSymbol = tempString + STRING_DATA_OFFSET + index;
+                    tempResult.destinationType = DESTINATION_TYPE_SYMBOL;
+                    tempResult.destination = tempSymbol;
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = *tempSymbol;
+                }
             } else if (tempSymbol == ':' || tempSymbol == ';') {
                 code += 1;
                 int32_t tempCode = *(int32_t *)(tempResult.value.data);
@@ -2319,48 +2358,67 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             // TODO: Make sure this is actually a variable.
                             uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
                             readStorageVariableName(tempBuffer, tempStartCode);
-                            tempResult.destination = createVariable(tempBuffer);
+                            tempResult.destinationType = DESTINATION_TYPE_VALUE;
+                            *(value_t **)&(tempResult.destination) = createVariable(tempBuffer);
                         }
-                        *(tempResult.destination) = tempResult2.value;
+                        if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
+                            *(value_t *)(tempResult.destination) = tempResult2.value;
+                        }
+                        if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
+                            *(uint8_t *)(tempResult.destination) = *(float *)(tempResult2.value.data);
+                        }
+                    }
+                    float tempNumber;
+                    if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
+                        tempNumber = *(float *)(((value_t *)(tempResult.destination))->data);
+                    }
+                    if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
+                        tempNumber = *(uint8_t *)(tempResult.destination);
                     }
                     if (tempSymbol == SYMBOL_ADD_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) += tempOperand2Float;
+                        tempNumber += tempOperand2Float;
                     }
                     if (tempSymbol == SYMBOL_SUBTRACT_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) -= tempOperand2Float;
+                        tempNumber -= tempOperand2Float;
                     }
                     if (tempSymbol == SYMBOL_MULTIPLY_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) *= tempOperand2Float;
+                        tempNumber *= tempOperand2Float;
                     }
                     if (tempSymbol == SYMBOL_DIVIDE_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) /= tempOperand2Float;
+                        tempNumber /= tempOperand2Float;
                     }
                     if (tempSymbol == SYMBOL_MODULUS_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = tempOperand1Int % tempOperand2Int;
+                        tempNumber = tempOperand1Int % tempOperand2Int;
                     }
                     if (tempSymbol == SYMBOL_BOOLEAN_AND_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
+                        tempNumber = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
                     }
                     if (tempSymbol == SYMBOL_BOOLEAN_OR_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
+                        tempNumber = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
                     }
                     if (tempSymbol == SYMBOL_BOOLEAN_XOR_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
+                        tempNumber = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
                     }
                     if (tempSymbol == SYMBOL_BITWISE_AND_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = (tempOperand1Int & tempOperand2Int);
+                        tempNumber = (tempOperand1Int & tempOperand2Int);
                     }
                     if (tempSymbol == SYMBOL_BITWISE_OR_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = (tempOperand1Int | tempOperand2Int);
+                        tempNumber = (tempOperand1Int | tempOperand2Int);
                     }
                     if (tempSymbol == SYMBOL_BITWISE_XOR_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = (tempOperand1Int ^ tempOperand2Int);
+                        tempNumber = (tempOperand1Int ^ tempOperand2Int);
                     }
                     if (tempSymbol == SYMBOL_BITSHIFT_LEFT_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = (tempOperand1Int << tempOperand2Int);
+                        tempNumber = (tempOperand1Int << tempOperand2Int);
                     }
                     if (tempSymbol == SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
-                        *(float *)&(tempResult.destination->data) = (tempOperand1Int >> tempOperand2Int);
+                        tempNumber = (tempOperand1Int >> tempOperand2Int);
+                    }
+                    if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
+                        *(float *)(((value_t *)(tempResult.destination))->data) = tempNumber;
+                    }
+                    if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
+                        *(uint8_t *)(tempResult.destination) = tempNumber;
                     }
                 } else {
                     // TODO: Check for invalid symbols.

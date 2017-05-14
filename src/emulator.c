@@ -1899,20 +1899,35 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
     tempResult.value.type = VALUE_TYPE_MISSING;
     treasureTracker_t tempTreasureTracker;
     initializeTreasureTracker(&tempTreasureTracker, TREASURE_TYPE_VALUE, &(tempResult.value));
-    int8_t tempShouldRun = true;
     if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT || tempBranch->action == BRANCH_ACTION_IGNORE_HARD) {
-        tempShouldRun = false;
         if (tempSymbol == SYMBOL_IF || tempSymbol == SYMBOL_WHILE || tempSymbol == SYMBOL_FUNCTION) {
             pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
-            code = skipStorageLine(code);
+        } else if (tempSymbol == SYMBOL_ELSE_IF) {
+            if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT) {
+                tempBranch->action = BRANCH_ACTION_RUN;
+                expressionResult_t tempResult2 = evaluateExpression(code + 1, 99, false);
+                tempBranch->action = BRANCH_ACTION_IGNORE_SOFT;
+                firstTreasureTracker = &tempTreasureTracker;
+                treasureTracker_t tempTreasureTracker2;
+                initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
+                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                    tempResult.status = tempResult2.status;
+                    return tempResult;
+                }
+                code = tempResult2.nextCode;
+                if (*(float *)(tempResult2.value.data) != 0.0) {
+                    tempBranch->action = BRANCH_ACTION_RUN;
+                }
+            }
+        } else if (tempSymbol == SYMBOL_ELSE) {
+            if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT) {
+                tempBranch->action = BRANCH_ACTION_RUN;
+            }
         } else if (tempSymbol == SYMBOL_END) {
             popBranch();
-            code = skipStorageLine(code);
-        } else {
-            code = skipStorageLine(code);
         }
-    }
-    if (tempShouldRun) {
+        code = skipStorageLine(code);
+    } else {
         if ((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.') {
             uint8_t tempBuffer[20];
             tempBuffer[0] = tempSymbol;
@@ -2077,6 +2092,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 } else {
                     pushBranch(BRANCH_ACTION_RUN, 0);
                 }
+            }
+            if (tempFunction == SYMBOL_ELSE_IF) {
+                tempBranch->action = BRANCH_ACTION_IGNORE_HARD;
+            }
+            if (tempFunction == SYMBOL_ELSE) {
+                tempBranch->action = BRANCH_ACTION_IGNORE_HARD;
             }
             if (tempFunction == SYMBOL_WHILE) {
                 if (*(float *)((tempArgumentList + 0)->data) == 0.0) {

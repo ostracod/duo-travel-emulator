@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <string.h>
+#include <math.h>
 #include <curses.h>
 
 #define BLACK_ON_WHITE 1
@@ -632,19 +633,19 @@ const int8_t MENU_OPTION_QUIT[] PROGMEM = "Quit";
 const int8_t MENU_OPTION_YES_DELETE[] PROGMEM = "Yes delete";
 const int8_t MENU_OPTION_NO_DELETE[] PROGMEM = "Do not delete";
 
-const int8_t *MENU_FILE[] PROGMEM = {
+const int8_t * const MENU_FILE[] PROGMEM = {
     MENU_OPTION_RUN,
     MENU_OPTION_EDIT,
     MENU_OPTION_RENAME,
     MENU_OPTION_DELETE
 };
 
-const int8_t *MENU_TEXT_EDITOR[] PROGMEM = {
+const int8_t * const MENU_TEXT_EDITOR[] PROGMEM = {
     MENU_OPTION_SAVE,
     MENU_OPTION_QUIT
 };
 
-const int8_t *MENU_FILE_DELETE[] PROGMEM = {
+const int8_t * const MENU_FILE_DELETE[] PROGMEM = {
     MENU_OPTION_NO_DELETE,
     MENU_OPTION_YES_DELETE
 };
@@ -2156,6 +2157,58 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int32_t tempMaximum = *(float *)((tempArgumentList + 1)->data);
                 tempResult.value.type = VALUE_TYPE_NUMBER;
                 *(float *)(tempResult.value.data) = tempMinimum + (rand() % (tempMaximum - tempMinimum + 1));
+            }
+            if (tempFunction == SYMBOL_ABSOLUTE_VALUE) {
+                float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = fabs(tempNumber);
+            }
+            if (tempFunction == SYMBOL_ROUND) {
+                float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = floor(tempNumber + 0.5);
+            }
+            if (tempFunction == SYMBOL_FLOOR) {
+                float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = floor(tempNumber);
+            }
+            if (tempFunction == SYMBOL_CEILING) {
+                float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = ceil(tempNumber);
+            }
+            if (tempFunction == SYMBOL_SINE) {
+                float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = sin(tempNumber);
+            }
+            if (tempFunction == SYMBOL_COSINE) {
+                float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = cos(tempNumber);
+            }
+            if (tempFunction == SYMBOL_TANGENT) {
+                float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = tan(tempNumber);
+            }
+            if (tempFunction == SYMBOL_SQUARE_ROOT) {
+                float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = sqrt(tempNumber);
+            }
+            if (tempFunction == SYMBOL_POWER) {
+                float tempNumber1 = *(float *)((tempArgumentList + 0)->data);
+                float tempNumber2 = *(float *)((tempArgumentList + 1)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = pow(tempNumber1, tempNumber2);
+            }
+            if (tempFunction == SYMBOL_LOG) {
+                float tempNumber1 = *(float *)((tempArgumentList + 0)->data);
+                float tempNumber2 = *(float *)((tempArgumentList + 1)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = log(tempNumber1) / log(tempNumber2);
             }
             if (tempShouldDisplayRunning) {
                 clearDisplay();

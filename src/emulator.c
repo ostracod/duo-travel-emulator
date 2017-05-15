@@ -2106,6 +2106,30 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     pushBranch(BRANCH_ACTION_LOOP, tempStartCode);
                 }
             }
+            if (tempFunction == SYMBOL_BREAK) {
+                branch_t *tempBranch2 = tempBranch;
+                while (true) {
+                    int8_t tempAction = tempBranch2->action;
+                    tempBranch2->action = BRANCH_ACTION_IGNORE_HARD;
+                    if (tempAction == BRANCH_ACTION_LOOP) {
+                        break;
+                    }
+                    tempBranch2 = tempBranch2->previous;
+                }
+            }
+            if (tempFunction == SYMBOL_CONTINUE) {
+                while (true) {
+                    if (tempBranch->action == BRANCH_ACTION_LOOP) {
+                        code = tempBranch->address;
+                        break;
+                    }
+                    popBranch();
+                    tempBranch = tempBranch->previous;
+                }
+            }
+            if (tempFunction == SYMBOL_QUIT) {
+                tempResult.status = EVALUATION_STATUS_QUIT;
+            }
             if (tempFunction == SYMBOL_END) {
                 int8_t tempAction = tempBranch->action;
                 int32_t tempAddress = tempBranch->address;

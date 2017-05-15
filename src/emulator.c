@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <time.h>
 #include <string.h>
 #include <curses.h>
 
@@ -2146,6 +2147,16 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 *(int32_t *)(tempValue->data) = tempStartCode;
                 pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
             }
+            if (tempFunction == SYMBOL_RANDOM) {
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = (float)(rand() % 10000) / 10000.0;
+            }
+            if (tempFunction == SYMBOL_RANDOM_INTEGER) {
+                int32_t tempMinimum = *(float *)((tempArgumentList + 0)->data);
+                int32_t tempMaximum = *(float *)((tempArgumentList + 1)->data);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = tempMinimum + (rand() % (tempMaximum - tempMinimum + 1));
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
@@ -2658,6 +2669,8 @@ static void mainMenu() {
 
 int main(int argc, const char *argv[]) {
 
+    srand(time(NULL));
+    
     // TEST CODE.
     /*
     int8_t *tempAllocation1 = allocate(30, 0);

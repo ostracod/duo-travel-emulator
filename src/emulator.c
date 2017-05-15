@@ -2254,6 +2254,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     tempShouldDisplayRunning = true;
                 }
             }
+            if (tempFunction == SYMBOL_FILE_EXISTS) {
+                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                int8_t *tempString = *(int8_t **)tempPointer;
+                int32_t tempResult2 = fileFindByName(tempString + STRING_DATA_OFFSET);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = (tempResult2 >= 0);
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

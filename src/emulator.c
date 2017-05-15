@@ -99,6 +99,9 @@
 #define TREASURE_TYPE_VALUE_ARRAY 1
 #define TREASURE_TYPE_SCOPE 2
 
+#define REQUEST_STRING_MAXIMUM_LENGTH 100
+#define REQUEST_NUMBER_MAXIMUM_LENGTH 20
+
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
 const int8_t SYMBOL_TEXT_BOOLEAN_XOR[] PROGMEM = "^^";
@@ -2073,14 +2076,6 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 index += 1;
             }
             int8_t tempShouldDisplayRunning = false;
-            if (tempFunction == SYMBOL_PRINT) {
-                int8_t tempResult2 = printValue(tempArgumentList + 0);
-                if (!tempResult2) {
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                } else {
-                    tempShouldDisplayRunning = true;
-                }
-            }
             if (tempFunction == SYMBOL_RETURN) {
                 tempResult.status = EVALUATION_STATUS_RETURN;
             }
@@ -2209,6 +2204,40 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 float tempNumber2 = *(float *)((tempArgumentList + 1)->data);
                 tempResult.value.type = VALUE_TYPE_NUMBER;
                 *(float *)(tempResult.value.data) = log(tempNumber1) / log(tempNumber2);
+            }
+            if (tempFunction == SYMBOL_PRINT) {
+                int8_t tempResult2 = printValue(tempArgumentList + 0);
+                if (!tempResult2) {
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                } else {
+                    tempShouldDisplayRunning = true;
+                }
+            }
+            if (tempFunction == SYMBOL_REQUEST_STRING) {
+                uint8_t tempText[REQUEST_STRING_MAXIMUM_LENGTH + 1];
+                tempText[0] = 0;
+                initializeTextEditor(tempText, REQUEST_STRING_MAXIMUM_LENGTH, false);
+                int8_t tempResult2 = runTextEditor();
+                if (!tempResult2) {
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                } else {
+                    tempResult.value.type = VALUE_TYPE_STRING;
+                    *(int8_t **)(tempResult.value.data) = createString(tempText);
+                    tempShouldDisplayRunning = true;
+                }
+            }
+            if (tempFunction == SYMBOL_REQUEST_NUMBER) {
+                uint8_t tempText[REQUEST_NUMBER_MAXIMUM_LENGTH + 1];
+                tempText[0] = 0;
+                initializeTextEditor(tempText, REQUEST_NUMBER_MAXIMUM_LENGTH, true);
+                int8_t tempResult2 = runTextEditor();
+                if (!tempResult2) {
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                } else {
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = convertTextToFloat(tempText);
+                    tempShouldDisplayRunning = true;
+                }
             }
             if (tempShouldDisplayRunning) {
                 clearDisplay();

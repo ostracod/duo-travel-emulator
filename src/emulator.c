@@ -167,7 +167,7 @@ const int8_t SYMBOL_TEXT_REMOVE_SUBSEQUENCE[] PROGMEM = "remSub:";
 const int8_t SYMBOL_TEXT_PRINT[] PROGMEM = "print:";
 const int8_t SYMBOL_TEXT_REQUEST_STRING[] PROGMEM = "reqStr;";
 const int8_t SYMBOL_TEXT_REQUEST_NUMBER[] PROGMEM = "reqNum;";
-const int8_t SYMBOL_TEXT_MENU[] PROGMEM = "menu";
+const int8_t SYMBOL_TEXT_MENU[] PROGMEM = "menu:";
 const int8_t SYMBOL_TEXT_FILE_EXISTS[] PROGMEM = "fExists:";
 const int8_t SYMBOL_TEXT_FILE_SIZE[] PROGMEM = "fSize:";
 const int8_t SYMBOL_TEXT_FILE_CREATE[] PROGMEM = "fCreate:";
@@ -309,7 +309,7 @@ const int8_t * const SYMBOL_TEXT_LIST[] PROGMEM = {
 #define SYMBOL_PRINT 185
 #define SYMBOL_REQUEST_STRING 186
 #define SYMBOL_REQUEST_NUMBER 187
-#define SYMBOL_TEXT_MENU 188
+#define SYMBOL_MENU 188
 #define SYMBOL_FILE_EXISTS 189
 #define SYMBOL_FILE_SIZE 190
 #define SYMBOL_FILE_CREATE 191
@@ -441,7 +441,7 @@ const int8_t FUNCTION_ARGUMENT_AMOUNT_LIST[] = {
     1, // SYMBOL_PRINT
     0, // SYMBOL_REQUEST_STRING
     0, // SYMBOL_REQUEST_NUMBER
-    2, // SYMBOL_TEXT_MENU
+    2, // SYMBOL_MENU
     1, // SYMBOL_FILE_EXISTS
     1, // SYMBOL_FILE_SIZE
     1, // SYMBOL_FILE_CREATE
@@ -548,7 +548,7 @@ const uint8_t SYMBOL_SET_INPUT_OUTPUT[] PROGMEM = {
     SYMBOL_PRINT,
     SYMBOL_REQUEST_NUMBER,
     SYMBOL_REQUEST_STRING,
-    SYMBOL_TEXT_MENU,
+    SYMBOL_MENU,
     SYMBOL_FILE_EXISTS,
     SYMBOL_FILE_SIZE,
     SYMBOL_FILE_CREATE,
@@ -2014,11 +2014,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             *(int8_t **)(tempResult.value.data) = tempList;
             while (true) {
                 uint8_t tempSymbol = readStorageInt8(code);
-                code += 1;
                 if (tempSymbol == ']') {
+                    code += 1;
                     break;
                 }
-                // TODO: Check for comma.
+                if (tempSymbol == ',') {
+                    code += 1;
+                }
                 expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
                 // Treasure does not need to be tracked because it will
                 // be immediately inserted into the tracked list.
@@ -2236,6 +2238,19 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 } else {
                     tempResult.value.type = VALUE_TYPE_NUMBER;
                     *(float *)(tempResult.value.data) = convertTextToFloat(tempText);
+                    tempShouldDisplayRunning = true;
+                }
+            }
+            if (tempFunction == SYMBOL_MENU) {
+                int8_t *tempTitle = *(int8_t **)((tempArgumentList + 0)->data);
+                int8_t *tempList = *(int8_t **)((tempArgumentList + 1)->data);
+                dumpMemory();
+                int8_t tempResult2 = menu(tempTitle, tempList);
+                if (tempResult2 < 0) {
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                } else {
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = tempResult2;
                     tempShouldDisplayRunning = true;
                 }
             }

@@ -2310,6 +2310,16 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
                 fileWrite(tempFile, tempString2 + STRING_DATA_OFFSET);
             }
+            if (tempFunction == SYMBOL_FILE_IMPORT) {
+                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                int8_t *tempString = *(int8_t **)tempPointer;
+                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                expressionResult_t tempResult2 = runCode(tempFile + FILE_DATA_OFFSET);
+                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                    tempResult.status = tempResult2.status;
+                    return tempResult;
+                }
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

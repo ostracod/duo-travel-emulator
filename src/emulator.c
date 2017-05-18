@@ -2261,6 +2261,15 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempResult.value.type = VALUE_TYPE_NUMBER;
                 *(float *)(tempResult.value.data) = (tempResult2 >= 0);
             }
+            if (tempFunction == SYMBOL_FILE_SIZE) {
+                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                int8_t *tempString = *(int8_t **)tempPointer;
+                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                int16_t tempSize;
+                readStorage(&tempSize, tempFile + FILE_SIZE_OFFSET, 2);
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = tempSize;
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

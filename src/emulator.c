@@ -2257,9 +2257,9 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempFunction == SYMBOL_FILE_EXISTS) {
                 int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
                 int8_t *tempString = *(int8_t **)tempPointer;
-                int32_t tempResult2 = fileFindByName(tempString + STRING_DATA_OFFSET);
+                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
                 tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = (tempResult2 >= 0);
+                *(float *)(tempResult.value.data) = (tempFile >= 0);
             }
             if (tempFunction == SYMBOL_FILE_SIZE) {
                 int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
@@ -2273,7 +2273,14 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempFunction == SYMBOL_FILE_CREATE) {
                 int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
                 int8_t *tempString = *(int8_t **)tempPointer;
-                int32_t tempResult2 = fileCreate(tempString + STRING_DATA_OFFSET);
+                int32_t tempFile = fileCreate(tempString + STRING_DATA_OFFSET);
+            }
+            if (tempFunction == SYMBOL_FILE_DELETE) {
+                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                int8_t *tempString = *(int8_t **)tempPointer;
+                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                uint8_t tempStatus = FILE_EXISTS_FALSE;
+                writeStorage(tempFile + FILE_EXISTS_OFFSET, &tempStatus, 1);
             }
             if (tempShouldDisplayRunning) {
                 clearDisplay();

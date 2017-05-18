@@ -1627,6 +1627,7 @@ static int8_t *fileRead(int32_t address, int16_t index, int16_t amount) {
     int8_t *output = createEmptyString(amount);
     int8_t *tempString = *(int8_t **)output;
     readStorage(tempString + STRING_DATA_OFFSET, address + FILE_DATA_OFFSET + index, amount);
+    *(tempString + STRING_DATA_OFFSET + amount) = 0;
     return output;
 }
 
@@ -2290,6 +2291,16 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
                 int16_t tempLength = strlen(tempString2 + STRING_DATA_OFFSET);
                 writeStorage(tempFile + FILE_NAME_OFFSET, tempString2 + STRING_DATA_OFFSET, tempLength + 1);
+            }
+            if (tempFunction == SYMBOL_FILE_READ) {
+                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                float tempIndex = *(float *)((tempArgumentList + 1)->data);
+                float tempAmount = *(float *)((tempArgumentList + 2)->data);
+                int8_t *tempString = *(int8_t **)tempPointer;
+                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                int8_t *tempResult2 = fileRead(tempFile, tempIndex, tempAmount);
+                tempResult.value.type = VALUE_TYPE_STRING;
+                *(int8_t **)(tempResult.value.data) = tempResult2;
             }
             if (tempShouldDisplayRunning) {
                 clearDisplay();

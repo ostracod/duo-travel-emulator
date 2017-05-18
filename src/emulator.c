@@ -2270,6 +2270,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempResult.value.type = VALUE_TYPE_NUMBER;
                 *(float *)(tempResult.value.data) = tempSize;
             }
+            if (tempFunction == SYMBOL_FILE_CREATE) {
+                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                int8_t *tempString = *(int8_t **)tempPointer;
+                int32_t tempResult2 = fileCreate(tempString + STRING_DATA_OFFSET);
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

@@ -2302,6 +2302,14 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempResult.value.type = VALUE_TYPE_STRING;
                 *(int8_t **)(tempResult.value.data) = tempResult2;
             }
+            if (tempFunction == SYMBOL_FILE_WRITE) {
+                int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
+                int8_t *tempPointer2 = *(int8_t **)((tempArgumentList + 1)->data);
+                int8_t *tempString1 = *(int8_t **)tempPointer1;
+                int8_t *tempString2 = *(int8_t **)tempPointer2;
+                int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
+                fileWrite(tempFile, tempString2 + STRING_DATA_OFFSET);
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

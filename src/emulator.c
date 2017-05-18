@@ -2282,6 +2282,15 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 uint8_t tempStatus = FILE_EXISTS_FALSE;
                 writeStorage(tempFile + FILE_EXISTS_OFFSET, &tempStatus, 1);
             }
+            if (tempFunction == SYMBOL_FILE_SET_NAME) {
+                int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
+                int8_t *tempPointer2 = *(int8_t **)((tempArgumentList + 1)->data);
+                int8_t *tempString1 = *(int8_t **)tempPointer1;
+                int8_t *tempString2 = *(int8_t **)tempPointer2;
+                int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
+                int16_t tempLength = strlen(tempString2 + STRING_DATA_OFFSET);
+                writeStorage(tempFile + FILE_NAME_OFFSET, tempString2 + STRING_DATA_OFFSET, tempLength + 1);
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

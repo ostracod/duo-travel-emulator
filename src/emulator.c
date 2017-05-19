@@ -2363,6 +2363,29 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     *(float *)(tempResult.value.data) = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
                 }
             }
+            if (tempFunction == SYMBOL_COPY) {
+                int8_t tempType = (tempArgumentList + 0)->type;
+                if (tempType == VALUE_TYPE_STRING) {
+                    int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempString1 = *(int8_t **)tempPointer1;
+                    int16_t tempLength = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
+                    int8_t *tempPointer2 = createEmptyString(tempLength);
+                    int8_t *tempString2 = *(int8_t **)tempPointer2;
+                    memcpy(tempString2 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength + 1);
+                    tempResult.value.type = VALUE_TYPE_STRING;
+                    *(int8_t **)(tempResult.value.data) = tempPointer2;
+                }
+                if (tempType == VALUE_TYPE_LIST) {
+                    int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempList1 = *(int8_t **)tempPointer1;
+                    int16_t tempLength = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
+                    int8_t *tempPointer2 = createEmptyList(tempLength);
+                    int8_t *tempList2 = *(int8_t **)tempPointer2;
+                    memcpy(tempList2 + LIST_DATA_OFFSET, tempList1 + LIST_DATA_OFFSET, tempLength * sizeof(value_t));
+                    tempResult.value.type = VALUE_TYPE_LIST;
+                    *(int8_t **)(tempResult.value.data) = tempPointer2;
+                }
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

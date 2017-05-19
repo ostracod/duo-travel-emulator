@@ -2344,6 +2344,10 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     tempResult.value = tempArgumentList[0];
                 }
             }
+            if (tempFunction == SYMBOL_TYPE) {
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)(tempResult.value.data) = (tempArgumentList + 0)->type;
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

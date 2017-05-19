@@ -2348,6 +2348,21 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempResult.value.type = VALUE_TYPE_NUMBER;
                 *(float *)(tempResult.value.data) = (tempArgumentList + 0)->type;
             }
+            if (tempFunction == SYMBOL_LENGTH) {
+                int8_t tempType = (tempArgumentList + 0)->type;
+                if (tempType == VALUE_TYPE_STRING) {
+                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempString = *(int8_t **)tempPointer;
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+                }
+                if (tempType == VALUE_TYPE_LIST) {
+                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempList = *(int8_t **)tempPointer;
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+                }
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

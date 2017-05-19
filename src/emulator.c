@@ -2320,6 +2320,30 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     return tempResult;
                 }
             }
+            if (tempFunction == SYMBOL_NUMBER) {
+                int8_t tempType = (tempArgumentList + 0)->type;
+                if (tempType == VALUE_TYPE_NUMBER) {
+                    tempResult.value = tempArgumentList[0];
+                }
+                if (tempType == VALUE_TYPE_STRING) {
+                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempString = *(int8_t **)tempPointer;
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = convertTextToFloat(tempString + STRING_DATA_OFFSET);
+                }
+            }
+            if (tempFunction == SYMBOL_STRING) {
+                int8_t tempType = (tempArgumentList + 0)->type;
+                if (tempType == VALUE_TYPE_NUMBER) {
+                    uint8_t tempBuffer[20];
+                    convertFloatToText(tempBuffer, *(float *)((tempArgumentList + 0)->data));
+                    tempResult.value.type = VALUE_TYPE_STRING;
+                    *(int8_t **)(tempResult.value.data) = createString(tempBuffer);
+                }
+                if (tempType == VALUE_TYPE_STRING) {
+                    tempResult.value = tempArgumentList[0];
+                }
+            }
             if (tempShouldDisplayRunning) {
                 clearDisplay();
                 displayTextFromProgMem(0, 0, MESSAGE_RUNNING);

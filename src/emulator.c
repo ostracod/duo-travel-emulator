@@ -934,6 +934,20 @@ void dumpMemory() {
     fclose(tempFile);
 }
 
+void scrambleMemory() {
+    int8_t garbage[20000];
+    int16_t index = 0;
+    while (index < sizeof(garbage)) {
+        garbage[index] = rand() % 100;
+        index += 1;
+    }
+    index = 0;
+    while (index < sizeof(garbage)) {
+        mvprintw(0, 0, "%d", garbage[index]);
+        index += 1;
+    }
+}
+
 static int16_t getProgMemTextLength(const int8_t *text) {
     int16_t index = 0;
     while (true) {
@@ -3623,6 +3637,8 @@ int main(int argc, const char *argv[]) {
     init_pair(BLACK_ON_WHITE, COLOR_BLACK, COLOR_WHITE);
     init_pair(WHITE_ON_CYAN, COLOR_WHITE, COLOR_CYAN);
     handleResize();
+
+    //scrambleMemory();
     
     mainMenu();
     

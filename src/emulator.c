@@ -998,13 +998,15 @@ static void deallocatePointer(int8_t *allocation) {
 static int8_t *resizeAllocation(int8_t *allocation, int16_t size) {
     int16_t tempSize = *(int16_t *)(allocation - ALLOCATION_SIZE_OFFSET);
     int8_t tempType = *(int8_t *)(allocation - ALLOCATION_TYPE_OFFSET);
-    int8_t *output = allocate(size, tempType);
+    int8_t *output;
     if (size > tempSize) {
+        output = allocate(size, tempType);
         memcpy(output, allocation, tempSize);
+        deallocate(allocation);
     } else {
-        memcpy(output, allocation, size);
+        output = allocation;
+        *(int16_t *)(allocation - ALLOCATION_SIZE_OFFSET) = size;
     }
-    deallocate(allocation);
     return output;
 }
 
@@ -1891,6 +1893,33 @@ static void markAndSweep() {
     allocationsSinceMarkAndSweep = 0;
 }
 
+int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *subsequence) {
+    
+    return true;
+}
+
+int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
+    
+    return true;
+}
+
+value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
+    value_t output;
+    output.type = VALUE_TYPE_MISSING;
+    
+    return output;
+}
+
+int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, value_t *subsequence) {
+    
+    return true;
+}
+
+int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
+    
+    return true;
+}
+
 static expressionResult_t runCode(int32_t address);
 
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
@@ -2362,6 +2391,28 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     tempResult.value.type = VALUE_TYPE_NUMBER;
                     *(float *)(tempResult.value.data) = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
                 }
+            }
+            if (tempFunction == SYMBOL_INSERT) {
+                int16_t index = *(float *)((tempArgumentList + 1)->data);
+                int8_t tempResult2 = insertValueIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
+            }
+            if (tempFunction == SYMBOL_REMOVE) {
+                int16_t index = *(float *)((tempArgumentList + 1)->data);
+                int8_t tempResult2 = removeValueFromSequence(tempArgumentList + 0, index);
+            }
+            if (tempFunction == SYMBOL_SUBSEQUENCE) {
+                int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
+                int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
+                tempResult.value = getSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
+            }
+            if (tempFunction == SYMBOL_INSERT_SUBSEQUENCE) {
+                int16_t index = *(float *)((tempArgumentList + 1)->data);
+                int8_t tempResult2 = insertSubsequenceIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
+            }
+            if (tempFunction == SYMBOL_REMOVE_SUBSEQUENCE) {
+                int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
+                int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
+                int8_t tempResult2 = removeSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
             }
             if (tempFunction == SYMBOL_COPY) {
                 int8_t tempType = (tempArgumentList + 0)->type;

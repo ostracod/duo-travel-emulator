@@ -2724,7 +2724,22 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     int32_t tempOperand1Int = (int32_t)tempOperand1Float;
                     int32_t tempOperand2Int = (int32_t)tempOperand2Float;
                     if (tempSymbol == '+') {
-                        *(float *)&(tempResult.value.data) += tempOperand2Float;
+                        if (tempResult.value.type == VALUE_TYPE_NUMBER) {
+                            *(float *)&(tempResult.value.data) += tempOperand2Float;
+                        }
+                        if (tempResult.value.type == VALUE_TYPE_STRING) {
+                            int8_t *tempPointer1 = *(int8_t **)(tempResult.value.data);
+                            int8_t *tempPointer2 = *(int8_t **)(tempResult2.value.data);
+                            int8_t *tempString1 = *(int8_t **)tempPointer1;
+                            int8_t *tempString2 = *(int8_t **)tempPointer2;
+                            int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
+                            int16_t tempLength2 = *(int16_t *)(tempString2 + STRING_LENGTH_OFFSET);
+                            int8_t *tempPointer3 = createEmptyString(tempLength1 + tempLength2);
+                            int8_t *tempString3 = *(int8_t **)tempPointer3;
+                            memcpy(tempString3 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength1);
+                            memcpy(tempString3 + STRING_DATA_OFFSET + tempLength1, tempString2 + STRING_DATA_OFFSET, tempLength2 + 1);
+                            *(int8_t **)&(tempResult.value.data) = tempPointer3;
+                        }
                     }
                     if (tempSymbol == '-') {
                         *(float *)&(tempResult.value.data) -= tempOperand2Float;

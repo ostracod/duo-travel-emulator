@@ -671,6 +671,7 @@ const int8_t ERROR_MESSAGE_MISSING_QUOTATION_MARK[] PROGMEM = "ERROR: Missing\nq
 const int8_t ERROR_MESSAGE_MISSING_BRACKET[] PROGMEM = "ERROR: Missing\nbracket.";
 const int8_t ERROR_MESSAGE_MISSING_PARENTHESIS[] PROGMEM = "ERROR: Missing\nparenthesis.";
 const int8_t ERROR_MESSAGE_MISSING_COMMA[] PROGMEM = "ERROR: Missing\ncomma.";
+const int8_t ERROR_MESSAGE_STACK_HEAP_COLLISION[] PROGMEM = "ERROR: Stack-\nheap collision.";
 
 typedef struct value {
     int8_t type;
@@ -716,6 +717,7 @@ FILE *storageFile;
 
 int8_t memory[1200];
 int8_t *firstAllocation = NULL;
+int8_t *lastAllocation = NULL;
 treasureTracker_t *firstTreasureTracker = NULL;
 int8_t *textEditorText;
 int16_t textEditorIndex;
@@ -724,8 +726,8 @@ int16_t textEditorMaximumLength;
 int8_t textEditorSymbolSetIndex;
 int8_t textEditorSymbolIndex[SYMBOL_SET_AMOUNT];
 int8_t textEditorNumberOnly;
-int8_t *globalScope;
-int8_t *localScope;
+int8_t *globalScope = NULL;
+int8_t *localScope = NULL;
 int16_t commandsSinceMarkAndSweep = 0;
 int16_t allocationsSinceMarkAndSweep = 0;
 const int8_t *errorMessage = NULL;
@@ -945,6 +947,21 @@ static void readProgMemText(int8_t *destination, const int8_t *text) {
     }
 }
 
+static int8_t *getStackBoundary() {
+    if (localScope == NULL) {
+        return memory;
+    }
+    int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
+    return localScope + SCOPE_DATA_OFFSET + tempSize;
+}
+
+static int8_t *getHeapBoundary() {
+    if (lastAllocation == NULL) {
+        return memory + sizeof(memory);
+    }
+    return lastAllocation - ALLOCATION_HEADER_SIZE;
+}
+
 static void resetHeap() {
     firstAllocation = NULL;
 }
@@ -973,6 +990,9 @@ static int8_t *allocate(int16_t size, int8_t type) {
         tempPreviousAllocation = tempNextAllocation;
         tempNextAllocation = *(int8_t **)(tempPreviousAllocation - ALLOCATION_NEXT_OFFSET);
     }
+    if (getStackBoundary() > output - ALLOCATION_HEADER_SIZE) {
+        return NULL;
+    }
     *(int8_t **)(output - ALLOCATION_PREVIOUS_OFFSET) = tempPreviousAllocation;
     *(int8_t **)(output - ALLOCATION_NEXT_OFFSET) = tempNextAllocation;
     *(int16_t *)(output - ALLOCATION_SIZE_OFFSET) = size;
@@ -982,7 +1002,9 @@ static int8_t *allocate(int16_t size, int8_t type) {
     } else {
         *(int8_t **)(tempPreviousAllocation - ALLOCATION_NEXT_OFFSET) = output;
     }
-    if (tempNextAllocation != NULL) {
+    if (tempNextAllocation == NULL) {
+        lastAllocation = output;
+    } else {
         *(int8_t **)(tempNextAllocation - ALLOCATION_PREVIOUS_OFFSET) = output;
     }
     allocationsSinceMarkAndSweep += 1;
@@ -997,7 +1019,9 @@ static void deallocate(int8_t *allocation) {
     } else {
         *(int8_t **)(tempPreviousAllocation - ALLOCATION_NEXT_OFFSET) = tempNextAllocation;
     }
-    if (tempNextAllocation != NULL) {
+    if (tempNextAllocation == NULL) {
+        lastAllocation = tempPreviousAllocation;
+    } else {
         *(int8_t **)(tempNextAllocation - ALLOCATION_PREVIOUS_OFFSET) = tempPreviousAllocation;
     }
 }
@@ -1013,6 +1037,9 @@ static int8_t *resizeAllocation(int8_t *allocation, int16_t size) {
     int8_t *output;
     if (size > tempSize) {
         output = allocate(size, tempType);
+        if (output == NULL) {
+            return NULL;
+        }
         memcpy(output, allocation, tempSize);
         deallocate(allocation);
     } else {
@@ -1024,7 +1051,13 @@ static int8_t *resizeAllocation(int8_t *allocation, int16_t size) {
 
 static int8_t *createEmptyString(int16_t length) {
     int8_t *output = allocate(sizeof(int8_t *), ALLOCATION_TYPE_POINTER);
+    if (output == NULL) {
+        return NULL;
+    }
     int8_t *tempString = allocate(STRING_DATA_OFFSET + length + 1, ALLOCATION_TYPE_STRING);
+    if (tempString == NULL) {
+        return NULL;
+    }
     *(int8_t **)output = tempString;
     *(int16_t *)(tempString + STRING_LENGTH_OFFSET) = length;
     *(int8_t *)(tempString + STRING_DATA_OFFSET) = 0;
@@ -1033,6 +1066,9 @@ static int8_t *createEmptyString(int16_t length) {
 
 static int8_t *createString(int8_t *text) {
     int8_t *output = createEmptyString(strlen(text));
+    if (output == NULL) {
+        return NULL;
+    }
     int8_t *tempString = *(int8_t **)output;
     strcpy(tempString + STRING_DATA_OFFSET, text);
     return output;
@@ -1040,6 +1076,9 @@ static int8_t *createString(int8_t *text) {
 
 static int8_t *createStringFromProgMem(const int8_t *text) {
     int8_t *output = createEmptyString(getProgMemTextLength(text));
+    if (output == NULL) {
+        return NULL;
+    }
     int8_t *tempString = *(int8_t **)output;
     readProgMemText(tempString + STRING_DATA_OFFSET, text);
     return output;
@@ -1051,6 +1090,9 @@ static int8_t *resizeString(int8_t *string, int16_t length) {
     int16_t tempMinimumSize = STRING_DATA_OFFSET + length + 1;
     if (tempMinimumSize > tempSize || tempMinimumSize < tempSize / 4) {
         tempString = resizeAllocation(tempString, STRING_DATA_OFFSET + (length + 1) * 2);
+        if (tempString == NULL) {
+            return NULL;
+        }
         *(int8_t **)string = tempString;
     }
     *(int16_t *)(tempString + STRING_LENGTH_OFFSET) = length;
@@ -1059,7 +1101,13 @@ static int8_t *resizeString(int8_t *string, int16_t length) {
 
 static int8_t *createEmptyList(int16_t length) {
     int8_t *output = allocate(sizeof(int8_t *), ALLOCATION_TYPE_POINTER);
+    if (output == NULL) {
+        return NULL;
+    }
     int8_t *tempList = allocate(LIST_DATA_OFFSET + length * sizeof(value_t), ALLOCATION_TYPE_LIST);
+    if (tempList == NULL) {
+        return NULL;
+    }
     *(int8_t **)output = tempList;
     *(int16_t *)(tempList + LIST_LENGTH_OFFSET) = length;
     int16_t index = 0;
@@ -1078,6 +1126,9 @@ static int8_t *resizeList(int8_t *list, int16_t length) {
     int16_t tempMinimumSize = LIST_DATA_OFFSET + length * sizeof(value_t);
     if (tempMinimumSize > tempSize || tempMinimumSize < tempSize / 4) {
         tempList = resizeAllocation(tempList, LIST_DATA_OFFSET + length * sizeof(value_t) * 2);
+        if (tempList == NULL) {
+            return NULL;
+        }
         *(int8_t **)list = tempList;
     }
     *(int16_t *)(tempList + LIST_LENGTH_OFFSET) = length;
@@ -1088,6 +1139,10 @@ static int8_t insertListValue(int8_t *list, int16_t index, value_t *value) {
     int8_t *tempList = *(int8_t **)list;
     int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
     tempList = resizeList(list, tempLength + 1);
+    if (tempList == NULL) {
+        errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+        return false;
+    }
     value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
     memmove(tempValue + 1, tempValue, (tempLength - index) * sizeof(value_t));
     *tempValue = *value;
@@ -1319,10 +1374,16 @@ static int8_t menu(int8_t *title, int8_t *optionList) {
 
 static int8_t menuWithOptionsFromProgMem(int8_t *title, const int8_t * const *optionList, int8_t optionAmount) {
     int8_t *tempList = createEmptyList(optionAmount);
+    if (tempList == NULL) {
+        return -2;
+    }
     value_t *tempListContents = (value_t *)(*(int8_t **)tempList + LIST_DATA_OFFSET);
     int8_t index = 0;
     while (index < optionAmount) {
         int8_t *tempString = createStringFromProgMem(pgm_read_ptr((const void **)(optionList + index)));
+        if (tempString == NULL) {
+            return -2;
+        }
         value_t *tempValue = tempListContents + index;
         tempValue->type = VALUE_TYPE_STRING;
         *(int8_t **)&(tempValue->data) = tempString;
@@ -1342,6 +1403,9 @@ static int8_t menuWithOptionsFromProgMem(int8_t *title, const int8_t * const *op
 
 static int8_t menuWithTitleFromProgMem(const int8_t *title, int8_t *optionList) {
     int8_t *tempTitle = createStringFromProgMem(title);
+    if (tempTitle == NULL) {
+        return -2;
+    }
     int8_t output = menu(tempTitle, optionList);
     deallocatePointer(tempTitle);
     return output;
@@ -1349,6 +1413,9 @@ static int8_t menuWithTitleFromProgMem(const int8_t *title, int8_t *optionList) 
 
 static int8_t menuFromProgMem(const int8_t *title, const int8_t * const *optionList, int8_t optionAmount) {
     int8_t *tempTitle = createStringFromProgMem(title);
+    if (tempTitle == NULL) {
+        return -2;
+    }
     int8_t output = menuWithOptionsFromProgMem(tempTitle, optionList, optionAmount);
     deallocatePointer(tempTitle);
     return output;
@@ -1658,6 +1725,10 @@ static int8_t *fileRead(int32_t address, int16_t index, int16_t amount) {
         return NULL;
     }
     int8_t *output = createEmptyString(amount);
+    if (output == NULL) {
+        errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+        return NULL;
+    }
     int8_t *tempString = *(int8_t **)output;
     readStorage(tempString + STRING_DATA_OFFSET, address + FILE_DATA_OFFSET + index, amount);
     *(tempString + STRING_DATA_OFFSET + amount) = 0;
@@ -1758,6 +1829,9 @@ static value_t *createVariable(uint8_t *name) {
     int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
     int8_t *tempVariable = localScope + SCOPE_DATA_OFFSET + tempSize;
     tempSize += VARIABLE_NAME_OFFSET + tempLength + 1;
+    if (localScope + SCOPE_DATA_OFFSET + tempSize > getHeapBoundary()) {
+        return NULL;
+    }
     *(int16_t *)(localScope + SCOPE_SIZE_OFFSET) = tempSize;
     *(int8_t **)(tempVariable + VARIABLE_NEXT_OFFSET) = *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET);
     *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET) = tempVariable;
@@ -1769,6 +1843,9 @@ static branch_t *createBranch() {
     int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
     branch_t *output = (branch_t *)(localScope + SCOPE_DATA_OFFSET + tempSize);
     tempSize += sizeof(branch_t);
+    if (localScope + SCOPE_DATA_OFFSET + tempSize > getHeapBoundary()) {
+        return NULL;
+    }
     *(int16_t *)(localScope + SCOPE_SIZE_OFFSET) = tempSize;
     branch_t *tempPreviousBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
     if (tempPreviousBranch != NULL) {
@@ -1779,7 +1856,7 @@ static branch_t *createBranch() {
     return output;
 }
 
-static void pushBranch(int8_t action, int32_t address) {
+static int8_t pushBranch(int8_t action, int32_t address) {
     branch_t *tempBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
     branch_t *tempNextBranch;
     if (tempBranch == NULL) {
@@ -1790,9 +1867,14 @@ static void pushBranch(int8_t action, int32_t address) {
             tempNextBranch = createBranch();
         }
     }
+    if (tempNextBranch == NULL) {
+        errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+        return false;
+    }
     tempNextBranch->action = action;
     tempNextBranch->address = address;
     *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = tempNextBranch;
+    return true;
 }
 
 static int8_t popBranch() {
@@ -1934,6 +2016,10 @@ static int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t 
         int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
         uint8_t tempSymbol = *(float *)(value->data);
         tempString = resizeString(tempPointer, tempLength + 1);
+        if (tempString == NULL) {
+            errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+            return false;
+        }
         memcpy(tempString + STRING_DATA_OFFSET + index + 1, tempString + STRING_DATA_OFFSET + index, tempLength - index + 1);
         *(tempString + STRING_DATA_OFFSET + index) = tempSymbol;
         return true;
@@ -1952,6 +2038,10 @@ static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startInde
         int16_t tempLength2 = endIndex - startIndex;
         memcpy(tempString + STRING_DATA_OFFSET + startIndex, tempString + STRING_DATA_OFFSET + endIndex, tempLength1 - endIndex + 1);
         tempString = resizeString(tempPointer, tempLength1 - tempLength2);
+        if (tempString == NULL) {
+            errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+            return false;
+        }
         return true;
     }
     if (sequence->type == VALUE_TYPE_LIST) {
@@ -1961,6 +2051,10 @@ static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startInde
         int16_t tempLength2 = endIndex - startIndex;
         memcpy(tempList + LIST_DATA_OFFSET + startIndex * sizeof(value_t), tempList + LIST_DATA_OFFSET + endIndex * sizeof(value_t), (tempLength1 - endIndex) * sizeof(value_t));
         tempList = resizeList(tempPointer, tempLength1 - tempLength2);
+        if (tempList == NULL) {
+            errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+            return false;
+        }
         return true;
     }
     return true;
@@ -1979,6 +2073,10 @@ static value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex,
         int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
         int16_t tempLength2 = endIndex - startIndex;
         int8_t *tempPointer2 = createEmptyString(tempLength2);
+        if (tempPointer2 == NULL) {
+            errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+            return output;
+        }
         int8_t *tempString2 = *(int8_t **)tempPointer2;
         memcpy(tempString2 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET + startIndex, tempLength2);
         *(tempString2 + STRING_DATA_OFFSET + tempLength2) = 0;
@@ -1991,6 +2089,10 @@ static value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex,
         int16_t tempLength1 = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
         int16_t tempLength2 = endIndex - startIndex;
         int8_t *tempPointer2 = createEmptyList(tempLength2);
+        if (tempPointer2 == NULL) {
+            errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+            return output;
+        }
         int8_t *tempList2 = *(int8_t **)tempPointer2;
         memcpy(tempList2 + LIST_DATA_OFFSET, tempList1 + LIST_DATA_OFFSET + startIndex * sizeof(value_t), tempLength2 * sizeof(value_t));
         output.type = VALUE_TYPE_LIST;
@@ -2008,6 +2110,10 @@ static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, va
         int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
         int16_t tempLength2 = *(int16_t *)(tempString2 + STRING_LENGTH_OFFSET);
         tempString1 = resizeString(tempPointer1, tempLength1 + tempLength2);
+        if (tempString1 == NULL) {
+            errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+            return false;
+        }
         memcpy(tempString1 + STRING_DATA_OFFSET + index + tempLength2, tempString1 + STRING_DATA_OFFSET + index, tempLength1 - index + 1);
         memcpy(tempString1 + STRING_DATA_OFFSET + index, tempString2 + STRING_DATA_OFFSET, tempLength2);
         return true;
@@ -2020,6 +2126,10 @@ static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, va
         int16_t tempLength1 = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
         int16_t tempLength2 = *(int16_t *)(tempList2 + LIST_LENGTH_OFFSET);
         tempList1 = resizeList(tempPointer1, tempLength1 + tempLength2);
+        if (tempList1 == NULL) {
+            errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
+            return false;
+        }
         memcpy(tempList1 + LIST_DATA_OFFSET + (index + tempLength2) * sizeof(value_t), tempList1 + LIST_DATA_OFFSET + index * sizeof(value_t), (tempLength1 - index) * sizeof(value_t));
         memcpy(tempList1 + LIST_DATA_OFFSET + index * sizeof(value_t), tempList2 + LIST_DATA_OFFSET, tempLength2 * sizeof(value_t));
         return true;
@@ -2068,7 +2178,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
     initializeTreasureTracker(&tempTreasureTracker, TREASURE_TYPE_VALUE, &(tempResult.value));
     if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT || tempBranch->action == BRANCH_ACTION_IGNORE_HARD) {
         if (tempSymbol == SYMBOL_IF || tempSymbol == SYMBOL_WHILE || tempSymbol == SYMBOL_FUNCTION) {
-            pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+            int8_t tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+            if (!tempSuccess) {
+                errorCode = tempStartCode;
+                tempResult.status = EVALUATION_STATUS_QUIT;
+                return tempResult;
+            }
         } else if (tempSymbol == SYMBOL_ELSE_IF) {
             if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT) {
                 tempBranch->action = BRANCH_ACTION_RUN;
@@ -2154,6 +2269,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             code += 1;
             int16_t tempLength = getStringLiteralLength(code);
             int8_t *tempString = createEmptyString(tempLength);
+            if (tempString == NULL) {
+                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                tempResult.status = EVALUATION_STATUS_QUIT;
+                return tempResult;
+            }
             int8_t *tempStringContents = *(int8_t **)tempString;
             int16_t index = 0;
             int8_t tempIsEscaped = false;
@@ -2191,6 +2311,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         } else if (tempSymbol == '[') {
             code += 1;
             int8_t *tempList = createEmptyList(0);
+            if (tempList == NULL) {
+                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                tempResult.status = EVALUATION_STATUS_QUIT;
+                return tempResult;
+            }
             int16_t index = 0;
             tempResult.value.type = VALUE_TYPE_LIST;
             *(int8_t **)(tempResult.value.data) = tempList;
@@ -2216,7 +2341,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     return tempResult;
                 }
                 code = tempResult2.nextCode;
-                insertListValue(tempList, index, &(tempResult2.value));
+                int8_t tempSuccess = insertListValue(tempList, index, &(tempResult2.value));
+                if (!tempSuccess) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 index += 1;
             }
         } else if (tempSymbol == '(') {
@@ -2283,10 +2413,16 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempResult.value = tempArgumentList[0];
             }
             if (tempFunction == SYMBOL_IF) {
+                int8_t tempSuccess;
                 if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
-                    pushBranch(BRANCH_ACTION_IGNORE_SOFT, 0);
+                    tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_SOFT, 0);
                 } else {
-                    pushBranch(BRANCH_ACTION_RUN, 0);
+                    tempSuccess = pushBranch(BRANCH_ACTION_RUN, 0);
+                }
+                if (!tempSuccess) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
                 }
             }
             if (tempFunction == SYMBOL_ELSE_IF) {
@@ -2296,10 +2432,16 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempBranch->action = BRANCH_ACTION_IGNORE_HARD;
             }
             if (tempFunction == SYMBOL_WHILE) {
+                int8_t tempSuccess;
                 if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
-                    pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+                    tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
                 } else {
-                    pushBranch(BRANCH_ACTION_LOOP, tempStartCode);
+                    tempSuccess = pushBranch(BRANCH_ACTION_LOOP, tempStartCode);
+                }
+                if (!tempSuccess) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
                 }
             }
             if (tempFunction == SYMBOL_BREAK) {
@@ -2347,10 +2489,23 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempFunction == SYMBOL_FUNCTION) {
                 uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
                 readStorageVariableName(tempBuffer, tempExpressionList[0]);
-                value_t *tempValue = createVariable(tempBuffer);
+                value_t *tempValue = findVariableValueByName(tempBuffer);
+                if (tempValue == NULL) {
+                    tempValue = createVariable(tempBuffer);
+                    if (tempValue == NULL) {
+                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
                 tempValue->type = VALUE_TYPE_FUNCTION;
                 *(int32_t *)(tempValue->data) = tempStartCode;
-                pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+                int8_t tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+                if (!tempSuccess) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
             }
             if (tempFunction == SYMBOL_RANDOM) {
                 tempResult.value.type = VALUE_TYPE_NUMBER;
@@ -2431,7 +2586,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     tempResult.status = EVALUATION_STATUS_QUIT;
                 } else {
                     tempResult.value.type = VALUE_TYPE_STRING;
-                    *(int8_t **)(tempResult.value.data) = createString(tempText);
+                    int8_t *tempString = createString(tempText);
+                    if (tempString == NULL) {
+                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    *(int8_t **)(tempResult.value.data) = tempString;
                     tempShouldDisplayRunning = true;
                 }
             }
@@ -2504,6 +2665,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int8_t *tempString = *(int8_t **)tempPointer;
                 int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
                 int8_t *tempResult2 = fileRead(tempFile, tempIndex, tempAmount);
+                if (tempResult2 == NULL) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 tempResult.value.type = VALUE_TYPE_STRING;
                 *(int8_t **)(tempResult.value.data) = tempResult2;
             }
@@ -2543,7 +2709,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     uint8_t tempBuffer[20];
                     convertFloatToText(tempBuffer, *(float *)((tempArgumentList + 0)->data));
                     tempResult.value.type = VALUE_TYPE_STRING;
-                    *(int8_t **)(tempResult.value.data) = createString(tempBuffer);
+                    int8_t *tempString = createString(tempBuffer);
+                    if (tempString == NULL) {
+                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    *(int8_t **)(tempResult.value.data) = tempString;
                 }
                 if (tempType == VALUE_TYPE_STRING) {
                     tempResult.value = tempArgumentList[0];
@@ -2571,24 +2743,49 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempFunction == SYMBOL_INSERT) {
                 int16_t index = *(float *)((tempArgumentList + 1)->data);
                 int8_t tempResult2 = insertValueIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
+                if (!tempResult2) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
             }
             if (tempFunction == SYMBOL_REMOVE) {
                 int16_t index = *(float *)((tempArgumentList + 1)->data);
                 int8_t tempResult2 = removeValueFromSequence(tempArgumentList + 0, index);
+                if (!tempResult2) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
             }
             if (tempFunction == SYMBOL_SUBSEQUENCE) {
                 int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
                 int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
                 tempResult.value = getSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
+                if (tempResult.value.type == VALUE_TYPE_MISSING) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
             }
             if (tempFunction == SYMBOL_INSERT_SUBSEQUENCE) {
                 int16_t index = *(float *)((tempArgumentList + 1)->data);
                 int8_t tempResult2 = insertSubsequenceIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
+                if (!tempResult2) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
             }
             if (tempFunction == SYMBOL_REMOVE_SUBSEQUENCE) {
                 int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
                 int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
                 int8_t tempResult2 = removeSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
+                if (!tempResult2) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
             }
             if (tempFunction == SYMBOL_COPY) {
                 int8_t tempType = (tempArgumentList + 0)->type;
@@ -2597,6 +2794,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     int8_t *tempString1 = *(int8_t **)tempPointer1;
                     int16_t tempLength = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
                     int8_t *tempPointer2 = createEmptyString(tempLength);
+                    if (tempPointer2 == NULL) {
+                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     int8_t *tempString2 = *(int8_t **)tempPointer2;
                     memcpy(tempString2 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength + 1);
                     tempResult.value.type = VALUE_TYPE_STRING;
@@ -2607,6 +2809,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     int8_t *tempList1 = *(int8_t **)tempPointer1;
                     int16_t tempLength = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
                     int8_t *tempPointer2 = createEmptyList(tempLength);
+                    if (tempPointer2 == NULL) {
+                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     int8_t *tempList2 = *(int8_t **)tempPointer2;
                     memcpy(tempList2 + LIST_DATA_OFFSET, tempList1 + LIST_DATA_OFFSET, tempLength * sizeof(value_t));
                     tempResult.value.type = VALUE_TYPE_LIST;
@@ -2750,7 +2957,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     *(int16_t *)(localScope + SCOPE_SIZE_OFFSET) = 0;
                     *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET) = NULL;
                     *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = NULL;
-                    pushBranch(BRANCH_ACTION_RUN, 0);
+                    int8_t tempSuccess = pushBranch(BRANCH_ACTION_RUN, 0);
+                    if (!tempSuccess) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     firstTreasureTracker = &tempTreasureTracker;
                     initializeTreasureTracker(&tempTreasureTracker3, TREASURE_TYPE_SCOPE, localScope);
                     tempCode += 1;
@@ -2774,6 +2986,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         tempBuffer[tempIndex] = 0;
                         if (index > 0) {
                             value_t *tempValue = createVariable(tempBuffer);
+                            if (tempValue == NULL) {
+                                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                                tempResult.status = EVALUATION_STATUS_QUIT;
+                                return tempResult;
+                            }
                             *tempValue = tempArgumentList[index - 1];
                         }
                         index += 1;
@@ -2829,6 +3046,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
                             int16_t tempLength2 = *(int16_t *)(tempString2 + STRING_LENGTH_OFFSET);
                             int8_t *tempPointer3 = createEmptyString(tempLength1 + tempLength2);
+                            if (tempPointer3 == NULL) {
+                                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                                tempResult.status = EVALUATION_STATUS_QUIT;
+                                return tempResult;
+                            }
                             int8_t *tempString3 = *(int8_t **)tempPointer3;
                             memcpy(tempString3 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength1);
                             memcpy(tempString3 + STRING_DATA_OFFSET + tempLength1, tempString2 + STRING_DATA_OFFSET, tempLength2 + 1);
@@ -2911,7 +3133,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
                             readStorageVariableName(tempBuffer, tempStartCode);
                             tempResult.destinationType = DESTINATION_TYPE_VALUE;
-                            *(value_t **)&(tempResult.destination) = createVariable(tempBuffer);
+                            value_t *tempValue = createVariable(tempBuffer);
+                            if (tempValue == NULL) {
+                                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                                tempResult.status = EVALUATION_STATUS_QUIT;
+                                return tempResult;
+                            }
+                            *(value_t **)&(tempResult.destination) = tempValue;
                         }
                         if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
                             *(value_t *)(tempResult.destination) = tempResult2.value;
@@ -2941,6 +3169,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             int8_t *tempString = *(int8_t **)tempPointer;
                             int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
                             int8_t tempResult3 = insertSubsequenceIntoSequence((value_t *)(tempResult.destination), tempLength, &(tempResult2.value));
+                            if (!tempResult3) {
+                                errorCode = tempStartCode;
+                                tempResult.status = EVALUATION_STATUS_QUIT;
+                                return tempResult;
+                            }
                         }
                     }
                     if (tempSymbol == SYMBOL_SUBTRACT_ASSIGN) {
@@ -3043,11 +3276,15 @@ static void runFile(int32_t address) {
     *(int16_t *)(globalScope + SCOPE_SIZE_OFFSET) = 0;
     *(int8_t **)(globalScope + SCOPE_VARIABLE_OFFSET) = NULL;
     *(branch_t **)(globalScope + SCOPE_BRANCH_OFFSET) = NULL;
-    pushBranch(BRANCH_ACTION_RUN, 0);
+    int8_t tempSuccess = pushBranch(BRANCH_ACTION_RUN, 0);
+    if (!tempSuccess) {
+        return;
+    }
     treasureTracker_t tempTreasureTracker;
     initializeTreasureTracker(&tempTreasureTracker, TREASURE_TYPE_SCOPE, localScope);
     runCode(tempCode);
     resetHeap();
+    localScope = NULL;
     if (errorMessage) {
         printTextFromProgMem(errorMessage);
         int32_t tempFileDataStartAddress = errorCode - errorCode % FILE_ENTRY_SIZE + FILE_DATA_OFFSET;

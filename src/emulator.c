@@ -102,6 +102,9 @@
 #define REQUEST_STRING_MAXIMUM_LENGTH 100
 #define REQUEST_NUMBER_MAXIMUM_LENGTH 20
 
+#define MENU_RESULT_ESCAPE -1
+#define MENU_RESULT_ERROR -2
+
 const int8_t SYMBOL_TEXT_BOOLEAN_AND[] PROGMEM = "&&";
 const int8_t SYMBOL_TEXT_BOOLEAN_OR[] PROGMEM = "||";
 const int8_t SYMBOL_TEXT_BOOLEAN_XOR[] PROGMEM = "^^";
@@ -672,6 +675,12 @@ const int8_t ERROR_MESSAGE_MISSING_BRACKET[] PROGMEM = "ERROR: Missing\nbracket.
 const int8_t ERROR_MESSAGE_MISSING_PARENTHESIS[] PROGMEM = "ERROR: Missing\nparenthesis.";
 const int8_t ERROR_MESSAGE_MISSING_COMMA[] PROGMEM = "ERROR: Missing\ncomma.";
 const int8_t ERROR_MESSAGE_STACK_HEAP_COLLISION[] PROGMEM = "ERROR: Stack-\nheap collision.";
+const int8_t ERROR_MESSAGE_BAD_INDEX[] PROGMEM = "ERROR: Bad\nindex.";
+const int8_t ERROR_MESSAGE_MISSING_FILE[] PROGMEM = "ERROR: Missing\nfile.";
+const int8_t ERROR_MESSAGE_NAME_IS_TOO_LONG[] PROGMEM = "ERROR: Name is\ntoo long.";
+const int8_t ERROR_MESSAGE_STORAGE_IS_FULL[] PROGMEM = "ERROR: Storage\nis full.";
+const int8_t ERROR_MESSAGE_BAD_AMOUNT[] PROGMEM = "ERROR: Bad\namount.";
+const int8_t ERROR_MESSAGE_FILE_EXISTS[] PROGMEM = "ERROR: File\nexists.";
 
 typedef struct value {
     int8_t type;
@@ -1138,6 +1147,10 @@ static int8_t *resizeList(int8_t *list, int16_t length) {
 static int8_t insertListValue(int8_t *list, int16_t index, value_t *value) {
     int8_t *tempList = *(int8_t **)list;
     int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+    if (index < 0 || index > tempLength) {
+        errorMessage = ERROR_MESSAGE_BAD_INDEX;
+        return false;
+    }
     tempList = resizeList(list, tempLength + 1);
     if (tempList == NULL) {
         errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
@@ -1224,6 +1237,7 @@ static int8_t displayValue(int8_t posX, int8_t posY, value_t *value) {
         displayStringAllocation(posX, posY, tempString);
         return true;
     } else {
+        errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
         return false;
     }
 }
@@ -1329,6 +1343,7 @@ static int8_t printValue(value_t *value) {
         int8_t tempResult = printStringAllocation(tempString);
         return tempResult;
     } else {
+        errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
         return false;
     }
 }
@@ -1340,7 +1355,10 @@ static int8_t menu(int8_t *title, int8_t *optionList) {
     displayStringAllocation(0, 0, title);
     displayCharacter(0, 1, '*');
     value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET);
-    displayValue(1, 1, tempValue);
+    int8_t tempSuccess = displayValue(1, 1, tempValue);
+    if (!tempSuccess) {
+        return MENU_RESULT_ERROR;
+    }
     int8_t index = 0;
     while (true) {
         int8_t tempKey = getKey();
@@ -1361,13 +1379,16 @@ static int8_t menu(int8_t *title, int8_t *optionList) {
             return index;
         }
         if (tempKey == KEY_ESCAPE) {
-            return -1;
+            return MENU_RESULT_ESCAPE;
         }
         if (tempNextIndex != index) {
             index = tempNextIndex;
             value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
             clearDisplayRegion(1, 1, DISPLAY_WIDTH - 1);
-            displayValue(1, 1, tempValue);
+            int8_t tempSuccess = displayValue(1, 1, tempValue);
+            if (!tempSuccess) {
+                return MENU_RESULT_ERROR;
+            }
         }
     }
 }
@@ -1375,14 +1396,14 @@ static int8_t menu(int8_t *title, int8_t *optionList) {
 static int8_t menuWithOptionsFromProgMem(int8_t *title, const int8_t * const *optionList, int8_t optionAmount) {
     int8_t *tempList = createEmptyList(optionAmount);
     if (tempList == NULL) {
-        return -2;
+        return MENU_RESULT_ERROR;
     }
     value_t *tempListContents = (value_t *)(*(int8_t **)tempList + LIST_DATA_OFFSET);
     int8_t index = 0;
     while (index < optionAmount) {
         int8_t *tempString = createStringFromProgMem(pgm_read_ptr((const void **)(optionList + index)));
         if (tempString == NULL) {
-            return -2;
+            return MENU_RESULT_ERROR;
         }
         value_t *tempValue = tempListContents + index;
         tempValue->type = VALUE_TYPE_STRING;
@@ -1404,7 +1425,7 @@ static int8_t menuWithOptionsFromProgMem(int8_t *title, const int8_t * const *op
 static int8_t menuWithTitleFromProgMem(const int8_t *title, int8_t *optionList) {
     int8_t *tempTitle = createStringFromProgMem(title);
     if (tempTitle == NULL) {
-        return -2;
+        return MENU_RESULT_ERROR;
     }
     int8_t output = menu(tempTitle, optionList);
     deallocatePointer(tempTitle);
@@ -1414,7 +1435,7 @@ static int8_t menuWithTitleFromProgMem(const int8_t *title, int8_t *optionList) 
 static int8_t menuFromProgMem(const int8_t *title, const int8_t * const *optionList, int8_t optionAmount) {
     int8_t *tempTitle = createStringFromProgMem(title);
     if (tempTitle == NULL) {
-        return -2;
+        return MENU_RESULT_ERROR;
     }
     int8_t output = menuWithOptionsFromProgMem(tempTitle, optionList, optionAmount);
     deallocatePointer(tempTitle);
@@ -1699,6 +1720,15 @@ static int32_t fileFindByName(int8_t *name) {
 }
 
 static int32_t fileCreate(int8_t *name) {
+    if (strlen(name) > FILE_NAME_MAXIMUM_LENGTH) {
+        errorMessage = ERROR_MESSAGE_NAME_IS_TOO_LONG;
+        return -1;
+    }
+    int32_t tempFile = fileFindByName(name);
+    if (tempFile >= 0) {
+        errorMessage = ERROR_MESSAGE_FILE_EXISTS;
+        return -1;
+    }
     int32_t tempAddress = 0;
     while (tempAddress < STORAGE_SIZE) {
         uint8_t tempExists;
@@ -1715,13 +1745,19 @@ static int32_t fileCreate(int8_t *name) {
         }
         tempAddress += FILE_ENTRY_SIZE;
     }
+    errorMessage = ERROR_MESSAGE_STORAGE_IS_FULL;
     return -1;
 }
 
 static int8_t *fileRead(int32_t address, int16_t index, int16_t amount) {
     int16_t tempSize;
     readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
-    if (index < 0 || index + amount > tempSize) {
+    if (index < 0 || index >= tempSize) {
+        errorMessage = ERROR_MESSAGE_BAD_INDEX;
+        return NULL;
+    }
+    if (index + amount > tempSize) {
+        errorMessage = ERROR_MESSAGE_BAD_AMOUNT;
         return NULL;
     }
     int8_t *output = createEmptyString(amount);
@@ -1735,10 +1771,15 @@ static int8_t *fileRead(int32_t address, int16_t index, int16_t amount) {
     return output;
 }
 
-static void fileWrite(int32_t address, int8_t *text) {
+static int8_t fileWrite(int32_t address, int8_t *text) {
     int16_t tempSize = strlen(text);
+    if (tempSize > FILE_MAXIMUM_SIZE) {
+        errorMessage = ERROR_MESSAGE_BAD_AMOUNT;
+        return false;
+    }
     writeStorage(address + FILE_SIZE_OFFSET, &tempSize, 2);
     writeStorage(address + FILE_DATA_OFFSET, text, tempSize + 1);
+    return true;
 }
 
 static void promptCreateFile() {
@@ -1754,8 +1795,12 @@ static void promptCreateFile() {
     if (!tempResult) {
         return;
     }
-    fileCreate(tempName);
-    printTextFromProgMem(MESSAGE_FILE_CREATED);
+    int32_t tempFile = fileCreate(tempName);
+    if (tempFile < 0) {
+        printTextFromProgMem(errorMessage);
+    } else {
+        printTextFromProgMem(MESSAGE_FILE_CREATED);
+    }
 }
 
 static void promptRenameFile(int32_t address) {
@@ -1919,6 +1964,9 @@ static int16_t getStringLiteralLength(int32_t code) {
     int8_t tempIsEscaped = false;
     while (true) {
         uint8_t tempSymbol = readStorageInt8(code);
+        if (tempSymbol == 0) {
+            break;
+        }
         if (tempIsEscaped) {
             output += 1;
             tempIsEscaped = false;
@@ -2011,10 +2059,17 @@ static void markAndSweep() {
 
 static int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *value) {
     if (sequence->type == VALUE_TYPE_STRING) {
+        if (value->type != VALUE_TYPE_NUMBER) {
+            errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
+            return false;
+        }
         int8_t *tempPointer = *(int8_t **)(sequence->data);
         int8_t *tempString = *(int8_t **)tempPointer;
         int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
-        uint8_t tempSymbol = *(float *)(value->data);
+        if (index < 0 || index > tempLength) {
+            errorMessage = ERROR_MESSAGE_BAD_INDEX;
+            return false;
+        }        uint8_t tempSymbol = *(float *)(value->data);
         tempString = resizeString(tempPointer, tempLength + 1);
         if (tempString == NULL) {
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
@@ -2036,6 +2091,10 @@ static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startInde
         int8_t *tempString = *(int8_t **)tempPointer;
         int16_t tempLength1 = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
         int16_t tempLength2 = endIndex - startIndex;
+        if (startIndex < 0 || startIndex >= tempLength1 || endIndex < 0 || endIndex > tempLength1 || startIndex > endIndex) {
+            errorMessage = ERROR_MESSAGE_BAD_INDEX;
+            return false;
+        }
         memcpy(tempString + STRING_DATA_OFFSET + startIndex, tempString + STRING_DATA_OFFSET + endIndex, tempLength1 - endIndex + 1);
         tempString = resizeString(tempPointer, tempLength1 - tempLength2);
         if (tempString == NULL) {
@@ -2049,6 +2108,10 @@ static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startInde
         int8_t *tempList = *(int8_t **)tempPointer;
         int16_t tempLength1 = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
         int16_t tempLength2 = endIndex - startIndex;
+        if (startIndex < 0 || startIndex >= tempLength1 || endIndex < 0 || endIndex > tempLength1 || startIndex > endIndex) {
+            errorMessage = ERROR_MESSAGE_BAD_INDEX;
+            return false;
+        }
         memcpy(tempList + LIST_DATA_OFFSET + startIndex * sizeof(value_t), tempList + LIST_DATA_OFFSET + endIndex * sizeof(value_t), (tempLength1 - endIndex) * sizeof(value_t));
         tempList = resizeList(tempPointer, tempLength1 - tempLength2);
         if (tempList == NULL) {
@@ -2072,6 +2135,10 @@ static value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex,
         int8_t *tempString1 = *(int8_t **)tempPointer1;
         int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
         int16_t tempLength2 = endIndex - startIndex;
+        if (startIndex < 0 || startIndex >= tempLength1 || endIndex < 0 || endIndex > tempLength1 || startIndex > endIndex) {
+            errorMessage = ERROR_MESSAGE_BAD_INDEX;
+            return output;
+        }
         int8_t *tempPointer2 = createEmptyString(tempLength2);
         if (tempPointer2 == NULL) {
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
@@ -2088,6 +2155,10 @@ static value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex,
         int8_t *tempList1 = *(int8_t **)tempPointer1;
         int16_t tempLength1 = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
         int16_t tempLength2 = endIndex - startIndex;
+        if (startIndex < 0 || startIndex >= tempLength1 || endIndex < 0 || endIndex > tempLength1 || startIndex > endIndex) {
+            errorMessage = ERROR_MESSAGE_BAD_INDEX;
+            return output;
+        }
         int8_t *tempPointer2 = createEmptyList(tempLength2);
         if (tempPointer2 == NULL) {
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
@@ -2103,12 +2174,20 @@ static value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex,
 
 static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, value_t *subsequence) {
     if (sequence->type == VALUE_TYPE_STRING) {
+        if (subsequence->type != VALUE_TYPE_STRING) {
+            errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
+            return false;
+        }
         int8_t *tempPointer1 = *(int8_t **)(sequence->data);
         int8_t *tempPointer2 = *(int8_t **)(subsequence->data);
         int8_t *tempString1 = *(int8_t **)tempPointer1;
         int8_t *tempString2 = *(int8_t **)tempPointer2;
         int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
         int16_t tempLength2 = *(int16_t *)(tempString2 + STRING_LENGTH_OFFSET);
+        if (index < 0 || index > tempLength1) {
+            errorMessage = ERROR_MESSAGE_BAD_INDEX;
+            return false;
+        }
         tempString1 = resizeString(tempPointer1, tempLength1 + tempLength2);
         if (tempString1 == NULL) {
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
@@ -2119,12 +2198,20 @@ static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, va
         return true;
     }
     if (sequence->type == VALUE_TYPE_LIST) {
+        if (subsequence->type != VALUE_TYPE_LIST) {
+            errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
+            return false;
+        }
         int8_t *tempPointer1 = *(int8_t **)(sequence->data);
         int8_t *tempPointer2 = *(int8_t **)(subsequence->data);
         int8_t *tempList1 = *(int8_t **)tempPointer1;
         int8_t *tempList2 = *(int8_t **)tempPointer2;
         int16_t tempLength1 = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
         int16_t tempLength2 = *(int16_t *)(tempList2 + LIST_LENGTH_OFFSET);
+        if (index < 0 || index > tempLength1) {
+            errorMessage = ERROR_MESSAGE_BAD_INDEX;
+            return false;
+        }
         tempList1 = resizeList(tempPointer1, tempLength1 + tempLength2);
         if (tempList1 == NULL) {
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
@@ -2572,7 +2659,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempFunction == SYMBOL_PRINT) {
                 int8_t tempResult2 = printValue(tempArgumentList + 0);
                 if (!tempResult2) {
+                    if (errorMessage != NULL) {
+                        errorCode = tempStartCode;
+                    }
                     tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
                 } else {
                     tempShouldDisplayRunning = true;
                 }
@@ -2613,8 +2704,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int8_t *tempTitle = *(int8_t **)((tempArgumentList + 0)->data);
                 int8_t *tempList = *(int8_t **)((tempArgumentList + 1)->data);
                 int8_t tempResult2 = menu(tempTitle, tempList);
-                if (tempResult2 < 0) {
+                if (tempResult2 == MENU_RESULT_ERROR) {
+                    errorCode = tempStartCode;
                     tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                } else if (tempResult2 < MENU_RESULT_ESCAPE) {
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
                 } else {
                     tempResult.value.type = VALUE_TYPE_NUMBER;
                     *(float *)(tempResult.value.data) = tempResult2;
@@ -2632,6 +2728,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
                 int8_t *tempString = *(int8_t **)tempPointer;
                 int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                if (tempFile < 0) {
+                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 int16_t tempSize;
                 readStorage(&tempSize, tempFile + FILE_SIZE_OFFSET, 2);
                 tempResult.value.type = VALUE_TYPE_NUMBER;
@@ -2641,11 +2742,21 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
                 int8_t *tempString = *(int8_t **)tempPointer;
                 int32_t tempFile = fileCreate(tempString + STRING_DATA_OFFSET);
+                if (tempFile < 0) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
             }
             if (tempFunction == SYMBOL_FILE_DELETE) {
                 int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
                 int8_t *tempString = *(int8_t **)tempPointer;
                 int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                if (tempFile < 0) {
+                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 uint8_t tempStatus = FILE_EXISTS_FALSE;
                 writeStorage(tempFile + FILE_EXISTS_OFFSET, &tempStatus, 1);
             }
@@ -2655,6 +2766,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int8_t *tempString1 = *(int8_t **)tempPointer1;
                 int8_t *tempString2 = *(int8_t **)tempPointer2;
                 int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
+                if (tempFile < 0) {
+                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 int16_t tempLength = strlen(tempString2 + STRING_DATA_OFFSET);
                 writeStorage(tempFile + FILE_NAME_OFFSET, tempString2 + STRING_DATA_OFFSET, tempLength + 1);
             }
@@ -2664,6 +2780,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 float tempAmount = *(float *)((tempArgumentList + 2)->data);
                 int8_t *tempString = *(int8_t **)tempPointer;
                 int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                if (tempFile < 0) {
+                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 int8_t *tempResult2 = fileRead(tempFile, tempIndex, tempAmount);
                 if (tempResult2 == NULL) {
                     errorCode = tempStartCode;
@@ -2679,12 +2800,27 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int8_t *tempString1 = *(int8_t **)tempPointer1;
                 int8_t *tempString2 = *(int8_t **)tempPointer2;
                 int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
-                fileWrite(tempFile, tempString2 + STRING_DATA_OFFSET);
+                if (tempFile < 0) {
+                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
+                int8_t tempSuccess = fileWrite(tempFile, tempString2 + STRING_DATA_OFFSET);
+                if (!tempSuccess) {
+                    errorCode = tempStartCode;
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
             }
             if (tempFunction == SYMBOL_FILE_IMPORT) {
                 int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
                 int8_t *tempString = *(int8_t **)tempPointer;
                 int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                if (tempFile < 0) {
+                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 expressionResult_t tempResult2 = runCode(tempFile + FILE_DATA_OFFSET);
                 if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                     tempResult.status = tempResult2.status;

@@ -3299,76 +3299,78 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             *(uint8_t *)(tempResult.destination) = *(float *)(tempResult2.value.data);
                         }
                     }
-                    int8_t tempType;
-                    float tempNumber;
-                    if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
-                        tempType = ((value_t *)(tempResult.destination))->type;
-                        if (tempType == VALUE_TYPE_NUMBER) {
-                            tempNumber = *(float *)(((value_t *)(tempResult.destination))->data);
-                        }
-                    }
-                    if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
-                        tempType = VALUE_TYPE_NUMBER;
-                        tempNumber = *(uint8_t *)(tempResult.destination);
-                    }
-                    if (tempSymbol == SYMBOL_ADD_ASSIGN) {
-                        if (tempType == VALUE_TYPE_NUMBER) {
-                            tempNumber += tempOperand2Float;
-                        }
-                        if (tempType == VALUE_TYPE_STRING) {
-                            int8_t *tempPointer = *(int8_t **)(((value_t *)(tempResult.destination))->data);
-                            int8_t *tempString = *(int8_t **)tempPointer;
-                            int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
-                            int8_t tempResult3 = insertSubsequenceIntoSequence((value_t *)(tempResult.destination), tempLength, &(tempResult2.value));
-                            if (!tempResult3) {
-                                errorCode = tempStartCode;
-                                tempResult.status = EVALUATION_STATUS_QUIT;
-                                return tempResult;
+                    if (tempResult.destination != NULL) {
+                        int8_t tempType;
+                        float tempNumber;
+                        if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
+                            tempType = ((value_t *)(tempResult.destination))->type;
+                            if (tempType == VALUE_TYPE_NUMBER) {
+                                tempNumber = *(float *)(((value_t *)(tempResult.destination))->data);
                             }
                         }
-                    }
-                    if (tempSymbol == SYMBOL_SUBTRACT_ASSIGN) {
-                        tempNumber -= tempOperand2Float;
-                    }
-                    if (tempSymbol == SYMBOL_MULTIPLY_ASSIGN) {
-                        tempNumber *= tempOperand2Float;
-                    }
-                    if (tempSymbol == SYMBOL_DIVIDE_ASSIGN) {
-                        tempNumber /= tempOperand2Float;
-                    }
-                    if (tempSymbol == SYMBOL_MODULUS_ASSIGN) {
-                        tempNumber = tempOperand1Int % tempOperand2Int;
-                    }
-                    if (tempSymbol == SYMBOL_BOOLEAN_AND_ASSIGN) {
-                        tempNumber = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
-                    }
-                    if (tempSymbol == SYMBOL_BOOLEAN_OR_ASSIGN) {
-                        tempNumber = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
-                    }
-                    if (tempSymbol == SYMBOL_BOOLEAN_XOR_ASSIGN) {
-                        tempNumber = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
-                    }
-                    if (tempSymbol == SYMBOL_BITWISE_AND_ASSIGN) {
-                        tempNumber = (tempOperand1Int & tempOperand2Int);
-                    }
-                    if (tempSymbol == SYMBOL_BITWISE_OR_ASSIGN) {
-                        tempNumber = (tempOperand1Int | tempOperand2Int);
-                    }
-                    if (tempSymbol == SYMBOL_BITWISE_XOR_ASSIGN) {
-                        tempNumber = (tempOperand1Int ^ tempOperand2Int);
-                    }
-                    if (tempSymbol == SYMBOL_BITSHIFT_LEFT_ASSIGN) {
-                        tempNumber = (tempOperand1Int << tempOperand2Int);
-                    }
-                    if (tempSymbol == SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
-                        tempNumber = (tempOperand1Int >> tempOperand2Int);
-                    }
-                    if (tempType == VALUE_TYPE_NUMBER) {
-                        if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
-                            *(float *)(((value_t *)(tempResult.destination))->data) = tempNumber;
-                        }
                         if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
-                            *(uint8_t *)(tempResult.destination) = tempNumber;
+                            tempType = VALUE_TYPE_NUMBER;
+                            tempNumber = *(uint8_t *)(tempResult.destination);
+                        }
+                        if (tempSymbol == SYMBOL_ADD_ASSIGN) {
+                            if (tempType == VALUE_TYPE_NUMBER) {
+                                tempNumber += tempOperand2Float;
+                            }
+                            if (tempType == VALUE_TYPE_STRING) {
+                                int8_t *tempPointer = *(int8_t **)(((value_t *)(tempResult.destination))->data);
+                                int8_t *tempString = *(int8_t **)tempPointer;
+                                int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+                                int8_t tempResult3 = insertSubsequenceIntoSequence((value_t *)(tempResult.destination), tempLength, &(tempResult2.value));
+                                if (!tempResult3) {
+                                    errorCode = tempStartCode;
+                                    tempResult.status = EVALUATION_STATUS_QUIT;
+                                    return tempResult;
+                                }
+                            }
+                        }
+                        if (tempSymbol == SYMBOL_SUBTRACT_ASSIGN) {
+                            tempNumber -= tempOperand2Float;
+                        }
+                        if (tempSymbol == SYMBOL_MULTIPLY_ASSIGN) {
+                            tempNumber *= tempOperand2Float;
+                        }
+                        if (tempSymbol == SYMBOL_DIVIDE_ASSIGN) {
+                            tempNumber /= tempOperand2Float;
+                        }
+                        if (tempSymbol == SYMBOL_MODULUS_ASSIGN) {
+                            tempNumber = tempOperand1Int % tempOperand2Int;
+                        }
+                        if (tempSymbol == SYMBOL_BOOLEAN_AND_ASSIGN) {
+                            tempNumber = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
+                        }
+                        if (tempSymbol == SYMBOL_BOOLEAN_OR_ASSIGN) {
+                            tempNumber = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
+                        }
+                        if (tempSymbol == SYMBOL_BOOLEAN_XOR_ASSIGN) {
+                            tempNumber = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
+                        }
+                        if (tempSymbol == SYMBOL_BITWISE_AND_ASSIGN) {
+                            tempNumber = (tempOperand1Int & tempOperand2Int);
+                        }
+                        if (tempSymbol == SYMBOL_BITWISE_OR_ASSIGN) {
+                            tempNumber = (tempOperand1Int | tempOperand2Int);
+                        }
+                        if (tempSymbol == SYMBOL_BITWISE_XOR_ASSIGN) {
+                            tempNumber = (tempOperand1Int ^ tempOperand2Int);
+                        }
+                        if (tempSymbol == SYMBOL_BITSHIFT_LEFT_ASSIGN) {
+                            tempNumber = (tempOperand1Int << tempOperand2Int);
+                        }
+                        if (tempSymbol == SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
+                            tempNumber = (tempOperand1Int >> tempOperand2Int);
+                        }
+                        if (tempType == VALUE_TYPE_NUMBER) {
+                            if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
+                                *(float *)(((value_t *)(tempResult.destination))->data) = tempNumber;
+                            }
+                            if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
+                                *(uint8_t *)(tempResult.destination) = tempNumber;
+                            }
                         }
                     }
                 } else {

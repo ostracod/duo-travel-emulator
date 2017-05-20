@@ -1956,7 +1956,29 @@ int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
 value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
     value_t output;
     output.type = VALUE_TYPE_MISSING;
-    
+    if (sequence->type == VALUE_TYPE_STRING) {
+        int8_t *tempPointer1 = *(int8_t **)(sequence->data);
+        int8_t *tempString1 = *(int8_t **)tempPointer1;
+        int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
+        int16_t tempLength2 = endIndex - startIndex;
+        int8_t *tempPointer2 = createEmptyString(tempLength2);
+        int8_t *tempString2 = *(int8_t **)tempPointer2;
+        memcpy(tempString2 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET + startIndex, tempLength2);
+        *(tempString2 + STRING_DATA_OFFSET + tempLength2) = 0;
+        output.type = VALUE_TYPE_STRING;
+        *(int8_t **)(output.data) = tempPointer2;
+    }
+    if (sequence->type == VALUE_TYPE_LIST) {
+        int8_t *tempPointer1 = *(int8_t **)(sequence->data);
+        int8_t *tempList1 = *(int8_t **)tempPointer1;
+        int16_t tempLength1 = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
+        int16_t tempLength2 = endIndex - startIndex;
+        int8_t *tempPointer2 = createEmptyList(tempLength2);
+        int8_t *tempList2 = *(int8_t **)tempPointer2;
+        memcpy(tempList2 + LIST_DATA_OFFSET, tempList1 + LIST_DATA_OFFSET + startIndex * sizeof(value_t), tempLength2 * sizeof(value_t));
+        output.type = VALUE_TYPE_LIST;
+        *(int8_t **)(output.data) = tempPointer2;
+    }
     return output;
 }
 

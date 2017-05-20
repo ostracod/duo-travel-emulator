@@ -1932,8 +1932,25 @@ int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *value)
 }
 
 int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
-    
-    return true;
+    if (sequence->type == VALUE_TYPE_STRING) {
+        int8_t *tempPointer = *(int8_t **)(sequence->data);
+        int8_t *tempString = *(int8_t **)tempPointer;
+        int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+        memcpy(tempString + STRING_DATA_OFFSET + index, tempString + STRING_DATA_OFFSET + index + 1, tempLength - index);
+        tempLength -= 1;
+        tempString = resizeString(tempPointer, tempLength);
+        return true;
+    }
+    if (sequence->type == VALUE_TYPE_LIST) {
+        int8_t *tempPointer = *(int8_t **)(sequence->data);
+        int8_t *tempList = *(int8_t **)tempPointer;
+        int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+        memcpy(tempList + LIST_DATA_OFFSET + index * sizeof(value_t), tempList + LIST_DATA_OFFSET + (index + 1) * sizeof(value_t), (tempLength - (index + 1)) * sizeof(value_t));
+        tempLength -= 1;
+        tempList = resizeList(tempPointer, tempLength);
+        return true;
+    }
+    return false;
 }
 
 value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {

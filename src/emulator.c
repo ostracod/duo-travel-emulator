@@ -2012,6 +2012,26 @@ static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, va
     return false;
 }
 
+static int8_t stringsAreEqual(int8_t *string1, int8_t *string2) {
+    int8_t *tempString1 = *(int8_t **)string1;
+    int8_t *tempString2 = *(int8_t **)string2;
+    int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
+    int16_t tempLength2 = *(int16_t *)(tempString2 + STRING_LENGTH_OFFSET);
+    if (tempLength1 != tempLength2) {
+        return false;
+    }
+    int16_t index = 0;
+    while (index < tempLength1) {
+        uint8_t tempSymbol1 = *(tempString1 + STRING_DATA_OFFSET + index);
+        uint8_t tempSymbol2 = *(tempString2 + STRING_DATA_OFFSET + index);
+        if (tempSymbol1 != tempSymbol2) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
 static expressionResult_t runCode(int32_t address);
 
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
@@ -2784,10 +2804,26 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         *(float *)&(tempResult.value.data) = tempOperand1Float < tempOperand2Float;
                     }
                     if (tempSymbol == SYMBOL_EQUAL) {
-                        *(float *)&(tempResult.value.data) = tempOperand1Float == tempOperand2Float;
+                        if (tempResult.value.type == VALUE_TYPE_NUMBER) {
+                            *(float *)&(tempResult.value.data) = tempOperand1Float == tempOperand2Float;
+                        }
+                        if (tempResult.value.type == VALUE_TYPE_STRING) {
+                            int8_t *tempPointer1 = *(int8_t **)(tempResult.value.data);
+                            int8_t *tempPointer2 = *(int8_t **)(tempResult2.value.data);
+                            tempResult.value.type = VALUE_TYPE_NUMBER;
+                            *(float *)&(tempResult.value.data) = stringsAreEqual(tempPointer1, tempPointer2);
+                        }
                     }
                     if (tempSymbol == SYMBOL_NOT_EQUAL) {
-                        *(float *)&(tempResult.value.data) = tempOperand1Float != tempOperand2Float;
+                        if (tempResult.value.type == VALUE_TYPE_NUMBER) {
+                            *(float *)&(tempResult.value.data) = tempOperand1Float != tempOperand2Float;
+                        }
+                        if (tempResult.value.type == VALUE_TYPE_STRING) {
+                            int8_t *tempPointer1 = *(int8_t **)(tempResult.value.data);
+                            int8_t *tempPointer2 = *(int8_t **)(tempResult2.value.data);
+                            tempResult.value.type = VALUE_TYPE_NUMBER;
+                            *(float *)&(tempResult.value.data) = !stringsAreEqual(tempPointer1, tempPointer2);
+                        }
                     }
                     if (tempSymbol == SYMBOL_GREATER_OR_EQUAL) {
                         *(float *)&(tempResult.value.data) = tempOperand1Float >= tempOperand2Float;

@@ -2810,15 +2810,28 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             *(uint8_t *)(tempResult.destination) = *(float *)(tempResult2.value.data);
                         }
                     }
+                    int8_t tempType;
                     float tempNumber;
                     if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
-                        tempNumber = *(float *)(((value_t *)(tempResult.destination))->data);
+                        tempType = ((value_t *)(tempResult.destination))->type;
+                        if (tempType == VALUE_TYPE_NUMBER) {
+                            tempNumber = *(float *)(((value_t *)(tempResult.destination))->data);
+                        }
                     }
                     if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
+                        tempType = VALUE_TYPE_NUMBER;
                         tempNumber = *(uint8_t *)(tempResult.destination);
                     }
                     if (tempSymbol == SYMBOL_ADD_ASSIGN) {
-                        tempNumber += tempOperand2Float;
+                        if (tempType == VALUE_TYPE_NUMBER) {
+                            tempNumber += tempOperand2Float;
+                        }
+                        if (tempType == VALUE_TYPE_STRING) {
+                            int8_t *tempPointer = *(int8_t **)(((value_t *)(tempResult.destination))->data);
+                            int8_t *tempString = *(int8_t **)tempPointer;
+                            int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+                            int8_t tempResult3 = insertSubsequenceIntoSequence((value_t *)(tempResult.destination), tempLength, &(tempResult2.value));
+                        }
                     }
                     if (tempSymbol == SYMBOL_SUBTRACT_ASSIGN) {
                         tempNumber -= tempOperand2Float;
@@ -2856,11 +2869,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     if (tempSymbol == SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
                         tempNumber = (tempOperand1Int >> tempOperand2Int);
                     }
-                    if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
-                        *(float *)(((value_t *)(tempResult.destination))->data) = tempNumber;
-                    }
-                    if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
-                        *(uint8_t *)(tempResult.destination) = tempNumber;
+                    if (tempType == VALUE_TYPE_NUMBER) {
+                        if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
+                            *(float *)(((value_t *)(tempResult.destination))->data) = tempNumber;
+                        }
+                        if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
+                            *(uint8_t *)(tempResult.destination) = tempNumber;
+                        }
                     }
                 } else {
                     // TODO: Check for invalid symbols.

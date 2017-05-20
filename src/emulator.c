@@ -1912,7 +1912,7 @@ static void markAndSweep() {
     allocationsSinceMarkAndSweep = 0;
 }
 
-int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *value) {
+static int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *value) {
     if (sequence->type == VALUE_TYPE_STRING) {
         int8_t *tempPointer = *(int8_t **)(sequence->data);
         int8_t *tempString = *(int8_t **)tempPointer;
@@ -1929,7 +1929,7 @@ int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *value)
     return false;
 }
 
-int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
+static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
     if (sequence->type == VALUE_TYPE_STRING) {
         int8_t *tempPointer = *(int8_t **)(sequence->data);
         int8_t *tempString = *(int8_t **)tempPointer;
@@ -1951,11 +1951,11 @@ int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int1
     return true;
 }
 
-int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
+static int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
     return removeSubsequenceFromSequence(sequence, index, index + 1);
 }
 
-value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
+static value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
     value_t output;
     output.type = VALUE_TYPE_MISSING;
     if (sequence->type == VALUE_TYPE_STRING) {
@@ -1984,7 +1984,7 @@ value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_
     return output;
 }
 
-int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, value_t *subsequence) {
+static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, value_t *subsequence) {
     if (sequence->type == VALUE_TYPE_STRING) {
         int8_t *tempPointer1 = *(int8_t **)(sequence->data);
         int8_t *tempPointer2 = *(int8_t **)(subsequence->data);
@@ -2366,7 +2366,6 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempFunction == SYMBOL_MENU) {
                 int8_t *tempTitle = *(int8_t **)((tempArgumentList + 0)->data);
                 int8_t *tempList = *(int8_t **)((tempArgumentList + 1)->data);
-                dumpMemory();
                 int8_t tempResult2 = menu(tempTitle, tempList);
                 if (tempResult2 < 0) {
                     tempResult.status = EVALUATION_STATUS_QUIT;

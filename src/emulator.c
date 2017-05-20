@@ -1075,8 +1075,7 @@ static int8_t *resizeList(int8_t *list, int16_t length) {
 static int8_t insertListValue(int8_t *list, int16_t index, value_t *value) {
     int8_t *tempList = *(int8_t **)list;
     int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
-    tempLength += 1;
-    tempList = resizeList(list, tempLength);
+    tempList = resizeList(list, tempLength + 1);
     value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
     memmove(tempValue + 1, tempValue, (tempLength - index) * sizeof(value_t));
     *tempValue = *value;
@@ -1919,8 +1918,7 @@ int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *value)
         int8_t *tempString = *(int8_t **)tempPointer;
         int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
         uint8_t tempSymbol = *(float *)(value->data);
-        tempLength += 1;
-        tempString = resizeString(tempPointer, tempLength);
+        tempString = resizeString(tempPointer, tempLength + 1);
         memcpy(tempString + STRING_DATA_OFFSET + index + 1, tempString + STRING_DATA_OFFSET + index, tempLength - index + 1);
         *(tempString + STRING_DATA_OFFSET + index) = tempSymbol;
         return true;
@@ -1937,8 +1935,7 @@ int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
         int8_t *tempString = *(int8_t **)tempPointer;
         int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
         memcpy(tempString + STRING_DATA_OFFSET + index, tempString + STRING_DATA_OFFSET + index + 1, tempLength - index);
-        tempLength -= 1;
-        tempString = resizeString(tempPointer, tempLength);
+        tempString = resizeString(tempPointer, tempLength - 1);
         return true;
     }
     if (sequence->type == VALUE_TYPE_LIST) {
@@ -1946,8 +1943,7 @@ int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
         int8_t *tempList = *(int8_t **)tempPointer;
         int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
         memcpy(tempList + LIST_DATA_OFFSET + index * sizeof(value_t), tempList + LIST_DATA_OFFSET + (index + 1) * sizeof(value_t), (tempLength - (index + 1)) * sizeof(value_t));
-        tempLength -= 1;
-        tempList = resizeList(tempPointer, tempLength);
+        tempList = resizeList(tempPointer, tempLength - 1);
         return true;
     }
     return false;
@@ -1983,8 +1979,31 @@ value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_
 }
 
 int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, value_t *subsequence) {
-    
-    return true;
+    if (sequence->type == VALUE_TYPE_STRING) {
+        int8_t *tempPointer1 = *(int8_t **)(sequence->data);
+        int8_t *tempPointer2 = *(int8_t **)(subsequence->data);
+        int8_t *tempString1 = *(int8_t **)tempPointer1;
+        int8_t *tempString2 = *(int8_t **)tempPointer2;
+        int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
+        int16_t tempLength2 = *(int16_t *)(tempString2 + STRING_LENGTH_OFFSET);
+        tempString1 = resizeString(tempPointer1, tempLength1 + tempLength2);
+        memcpy(tempString1 + STRING_DATA_OFFSET + index + tempLength2, tempString1 + STRING_DATA_OFFSET + index, tempLength1 - index + 1);
+        memcpy(tempString1 + STRING_DATA_OFFSET + index, tempString2 + STRING_DATA_OFFSET, tempLength2);
+        return true;
+    }
+    if (sequence->type == VALUE_TYPE_LIST) {
+        int8_t *tempPointer1 = *(int8_t **)(sequence->data);
+        int8_t *tempPointer2 = *(int8_t **)(subsequence->data);
+        int8_t *tempList1 = *(int8_t **)tempPointer1;
+        int8_t *tempList2 = *(int8_t **)tempPointer2;
+        int16_t tempLength1 = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
+        int16_t tempLength2 = *(int16_t *)(tempList2 + LIST_LENGTH_OFFSET);
+        tempList1 = resizeList(tempPointer1, tempLength1 + tempLength2);
+        memcpy(tempList1 + LIST_DATA_OFFSET + (index + tempLength2) * sizeof(value_t), tempList1 + LIST_DATA_OFFSET + index * sizeof(value_t), (tempLength1 - index) * sizeof(value_t));
+        memcpy(tempList1 + LIST_DATA_OFFSET + index * sizeof(value_t), tempList2 + LIST_DATA_OFFSET, tempLength2 * sizeof(value_t));
+        return true;
+    }
+    return false;
 }
 
 int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {

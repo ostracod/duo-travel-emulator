@@ -973,6 +973,7 @@ static int8_t *getHeapBoundary() {
 
 static void resetHeap() {
     firstAllocation = NULL;
+    lastAllocation = NULL;
 }
 
 static int8_t *allocate(int16_t size, int8_t type) {

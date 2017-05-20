@@ -1929,24 +1929,30 @@ int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *value)
     return false;
 }
 
-int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
+int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
     if (sequence->type == VALUE_TYPE_STRING) {
         int8_t *tempPointer = *(int8_t **)(sequence->data);
         int8_t *tempString = *(int8_t **)tempPointer;
-        int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
-        memcpy(tempString + STRING_DATA_OFFSET + index, tempString + STRING_DATA_OFFSET + index + 1, tempLength - index);
-        tempString = resizeString(tempPointer, tempLength - 1);
+        int16_t tempLength1 = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+        int16_t tempLength2 = endIndex - startIndex;
+        memcpy(tempString + STRING_DATA_OFFSET + startIndex, tempString + STRING_DATA_OFFSET + endIndex, tempLength1 - endIndex + 1);
+        tempString = resizeString(tempPointer, tempLength1 - tempLength2);
         return true;
     }
     if (sequence->type == VALUE_TYPE_LIST) {
         int8_t *tempPointer = *(int8_t **)(sequence->data);
         int8_t *tempList = *(int8_t **)tempPointer;
-        int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
-        memcpy(tempList + LIST_DATA_OFFSET + index * sizeof(value_t), tempList + LIST_DATA_OFFSET + (index + 1) * sizeof(value_t), (tempLength - (index + 1)) * sizeof(value_t));
-        tempList = resizeList(tempPointer, tempLength - 1);
+        int16_t tempLength1 = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+        int16_t tempLength2 = endIndex - startIndex;
+        memcpy(tempList + LIST_DATA_OFFSET + startIndex * sizeof(value_t), tempList + LIST_DATA_OFFSET + endIndex * sizeof(value_t), (tempLength1 - endIndex) * sizeof(value_t));
+        tempList = resizeList(tempPointer, tempLength1 - tempLength2);
         return true;
     }
-    return false;
+    return true;
+}
+
+int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
+    return removeSubsequenceFromSequence(sequence, index, index + 1);
 }
 
 value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
@@ -2004,11 +2010,6 @@ int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, value_t *
         return true;
     }
     return false;
-}
-
-int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
-    
-    return true;
 }
 
 static expressionResult_t runCode(int32_t address);

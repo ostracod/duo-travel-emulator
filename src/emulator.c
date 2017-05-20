@@ -662,6 +662,10 @@ const int8_t MESSAGE_SAVING[] PROGMEM = "Saving...";
 const int8_t MESSAGE_FILE_SAVED[] PROGMEM = "Saved file.";
 const int8_t MESSAGE_RUNNING[] PROGMEM = "Running...";
 
+const int8_t ERROR_MESSAGE_BAD_START_OF_EXPRESSION[] PROGMEM = "ERROR: Bad\nstart of\nexpression.";
+const int8_t ERROR_MESSAGE_BAD_END_STATEMENT[] PROGMEM = "ERROR: Bad\nend statement.";
+const int8_t ERROR_MESSAGE_BAD_CONTINUE_STATEMENT[] PROGMEM = "ERROR: Bad\ncontinue\nstatement.";
+
 typedef struct value {
     int8_t type;
     int8_t data[sizeof(int8_t *) > sizeof(float) ? sizeof(int8_t *) : sizeof(float)];
@@ -718,6 +722,8 @@ int8_t *globalScope;
 int8_t *localScope;
 int16_t commandsSinceMarkAndSweep = 0;
 int16_t allocationsSinceMarkAndSweep = 0;
+const int8_t *errorMessage = NULL;
+int32_t errorCode;
 
 int8_t pgm_read_byte(const int8_t *pointer) {
     return *pointer;
@@ -1783,11 +1789,14 @@ static void pushBranch(int8_t action, int32_t address) {
     *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = tempNextBranch;
 }
 
-static void popBranch() {
+static int8_t popBranch() {
     branch_t *tempBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
     branch_t *tempPreviousBranch = tempBranch->previous;
-    // TODO: Handle error if tempPreviousBranch is NULL.
+    if (tempPreviousBranch == NULL) {
+        return false;
+    }
     *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = tempPreviousBranch;
+    return true;
 }
 
 static int32_t skipStorageLine(int32_t address) {
@@ -2032,6 +2041,11 @@ static int8_t stringsAreEqual(int8_t *string1, int8_t *string2) {
     return true;
 }
 
+static void reportError(const int8_t *message, int32_t code) {
+    errorMessage = message;
+    errorCode = code;
+}
+
 static expressionResult_t runCode(int32_t address);
 
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
@@ -2071,7 +2085,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempBranch->action = BRANCH_ACTION_RUN;
             }
         } else if (tempSymbol == SYMBOL_END) {
-            popBranch();
+            int8_t tempSuccess = popBranch();
+            if (!tempSuccess) {
+                reportError(ERROR_MESSAGE_BAD_END_STATEMENT, tempStartCode);
+                tempResult.status = EVALUATION_STATUS_QUIT;
+                return tempResult;
+            }
         }
         code = skipStorageLine(code);
     } else {
@@ -2264,7 +2283,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         code = tempBranch->address;
                         break;
                     }
-                    popBranch();
+                    int8_t tempSuccess = popBranch();
+                    if (!tempSuccess) {
+                        reportError(ERROR_MESSAGE_BAD_CONTINUE_STATEMENT, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     tempBranch = tempBranch->previous;
                 }
             }
@@ -2274,7 +2298,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             if (tempFunction == SYMBOL_END) {
                 int8_t tempAction = tempBranch->action;
                 int32_t tempAddress = tempBranch->address;
-                popBranch();
+                int8_t tempSuccess = popBranch();
+                if (!tempSuccess) {
+                    reportError(ERROR_MESSAGE_BAD_END_STATEMENT, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 if (tempAction == BRANCH_ACTION_LOOP) {
                     code = tempAddress;
                 }
@@ -2595,6 +2624,10 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     *(float *)(tempResult.value.data) = *(uint8_t *)(tempResult.destination);
                 }
             }
+        } else {
+            reportError(ERROR_MESSAGE_BAD_START_OF_EXPRESSION, tempStartCode);
+            tempResult.status = EVALUATION_STATUS_QUIT;
+            return tempResult;
         }
         while (true) {
             uint8_t tempSymbol = readStorageInt8(code);
@@ -2957,6 +2990,7 @@ static expressionResult_t runCode(int32_t address) {
 }
 
 static void runFile(int32_t address) {
+    errorMessage = NULL;
     resetHeap();
     firstTreasureTracker = NULL;
     commandsSinceMarkAndSweep = 0;
@@ -2974,6 +3008,11 @@ static void runFile(int32_t address) {
     initializeTreasureTracker(&tempTreasureTracker, TREASURE_TYPE_SCOPE, localScope);
     runCode(tempCode);
     resetHeap();
+    if (errorMessage) {
+        printTextFromProgMem(errorMessage);
+        // TODO: Print the code which caused the error. (errorCode)
+        
+    }
 }
 
 static void editFile(int32_t address) {

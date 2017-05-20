@@ -1033,6 +1033,18 @@ static int8_t *createStringFromProgMem(const int8_t *text) {
     return output;
 }
 
+static int8_t *resizeString(int8_t *string, int16_t length) {
+    int8_t *tempString = *(int8_t **)string;
+    int16_t tempSize = *(int16_t *)(tempString - ALLOCATION_SIZE_OFFSET);
+    int16_t tempMinimumSize = STRING_DATA_OFFSET + length + 1;
+    if (tempMinimumSize > tempSize || tempMinimumSize < tempSize / 4) {
+        tempString = resizeAllocation(tempString, STRING_DATA_OFFSET + (length + 1) * 2);
+        *(int8_t **)string = tempString;
+    }
+    *(int16_t *)(tempString + STRING_LENGTH_OFFSET) = length;
+    return tempString;
+}
+
 static int8_t *createEmptyList(int16_t length) {
     int8_t *output = allocate(sizeof(int8_t *), ALLOCATION_TYPE_POINTER);
     int8_t *tempList = allocate(LIST_DATA_OFFSET + length * sizeof(value_t), ALLOCATION_TYPE_LIST);
@@ -1048,19 +1060,27 @@ static int8_t *createEmptyList(int16_t length) {
     return output;
 }
 
-static void insertListValue(int8_t *list, int16_t index, value_t *value) {
+static int8_t *resizeList(int8_t *list, int16_t length) {
     int8_t *tempList = *(int8_t **)list;
     int16_t tempSize = *(int16_t *)(tempList - ALLOCATION_SIZE_OFFSET);
-    int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
-    if (LIST_DATA_OFFSET + (tempLength + 1) * sizeof(value_t) > tempSize) {
-        tempList = resizeAllocation(tempList, LIST_DATA_OFFSET + (tempLength + 1) * sizeof(value_t) * 2);
+    int16_t tempMinimumSize = LIST_DATA_OFFSET + length * sizeof(value_t);
+    if (tempMinimumSize > tempSize || tempMinimumSize < tempSize / 4) {
+        tempList = resizeAllocation(tempList, LIST_DATA_OFFSET + length * sizeof(value_t) * 2);
         *(int8_t **)list = tempList;
     }
+    *(int16_t *)(tempList + LIST_LENGTH_OFFSET) = length;
+    return tempList;
+}
+
+static int8_t insertListValue(int8_t *list, int16_t index, value_t *value) {
+    int8_t *tempList = *(int8_t **)list;
+    int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+    tempLength += 1;
+    tempList = resizeList(list, tempLength);
     value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
     memmove(tempValue + 1, tempValue, (tempLength - index) * sizeof(value_t));
     *tempValue = *value;
-    tempLength += 1;
-    *(int16_t *)(tempList + LIST_LENGTH_OFFSET) = tempLength;
+    return true;
 }
 
 static int8_t getSymbolWidth(uint8_t symbol) {
@@ -1893,9 +1913,22 @@ static void markAndSweep() {
     allocationsSinceMarkAndSweep = 0;
 }
 
-int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *subsequence) {
-    
-    return true;
+int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t *value) {
+    if (sequence->type == VALUE_TYPE_STRING) {
+        int8_t *tempPointer = *(int8_t **)(sequence->data);
+        int8_t *tempString = *(int8_t **)tempPointer;
+        int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+        uint8_t tempSymbol = *(float *)(value->data);
+        tempLength += 1;
+        tempString = resizeString(tempPointer, tempLength);
+        memcpy(tempString + STRING_DATA_OFFSET + index + 1, tempString + STRING_DATA_OFFSET + index, tempLength - index + 1);
+        *(tempString + STRING_DATA_OFFSET + index) = tempSymbol;
+        return true;
+    }
+    if (sequence->type == VALUE_TYPE_LIST) {
+        return insertListValue(*(int8_t **)(sequence->data), index, value);
+    }
+    return false;
 }
 
 int8_t removeValueFromSequence(value_t *sequence, int16_t index) {

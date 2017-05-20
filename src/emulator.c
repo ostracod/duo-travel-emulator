@@ -3050,8 +3050,28 @@ static void runFile(int32_t address) {
     resetHeap();
     if (errorMessage) {
         printTextFromProgMem(errorMessage);
-        // TODO: Print the code which caused the error. (errorCode)
-        
+        int32_t tempFileDataStartAddress = errorCode - errorCode % FILE_ENTRY_SIZE + FILE_DATA_OFFSET;
+        int32_t tempStartAddress = errorCode;
+        int32_t tempEndAddress = errorCode;
+        while (tempStartAddress > tempFileDataStartAddress) {
+            uint8_t tempSymbol = readStorageInt8(tempStartAddress - 1);
+            if (tempSymbol == '\n') {
+                break;
+            }
+            tempStartAddress -= 1;
+        }
+        while (true) {
+            uint8_t tempSymbol = readStorageInt8(tempEndAddress);
+            if (tempSymbol == '\n' || tempSymbol == 0) {
+                break;
+            }
+            tempEndAddress += 1;
+        }
+        int16_t tempLength = tempEndAddress - tempStartAddress;
+        uint8_t tempBuffer[tempLength + 1];
+        readStorage(tempBuffer, tempStartAddress, tempLength);
+        tempBuffer[tempLength] = 0;
+        printText(tempBuffer);
     }
 }
 

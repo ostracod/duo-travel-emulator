@@ -2507,468 +2507,592 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 index += 1;
             }
             int8_t tempShouldDisplayRunning = false;
-            if (tempFunction == SYMBOL_RETURN) {
-                tempResult.status = EVALUATION_STATUS_RETURN;
-            }
-            if (tempFunction == SYMBOL_RETURN_WITH_VALUE) {
-                tempResult.status = EVALUATION_STATUS_RETURN;
-                tempResult.value = tempArgumentList[0];
-            }
-            if (tempFunction == SYMBOL_IF) {
-                int8_t tempSuccess;
-                if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
-                    tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_SOFT, 0);
-                } else {
-                    tempSuccess = pushBranch(BRANCH_ACTION_RUN, 0);
+            // Control functions.
+            if (tempFunction >= SYMBOL_IF && tempFunction <= SYMBOL_QUIT) {
+                if (tempFunction == SYMBOL_RETURN) {
+                    tempResult.status = EVALUATION_STATUS_RETURN;
                 }
-                if (!tempSuccess) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
+                if (tempFunction == SYMBOL_RETURN_WITH_VALUE) {
+                    tempResult.status = EVALUATION_STATUS_RETURN;
+                    tempResult.value = tempArgumentList[0];
                 }
-            }
-            if (tempFunction == SYMBOL_ELSE_IF) {
-                tempBranch->action = BRANCH_ACTION_IGNORE_HARD;
-            }
-            if (tempFunction == SYMBOL_ELSE) {
-                tempBranch->action = BRANCH_ACTION_IGNORE_HARD;
-            }
-            if (tempFunction == SYMBOL_WHILE) {
-                int8_t tempSuccess;
-                if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
-                    tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
-                } else {
-                    tempSuccess = pushBranch(BRANCH_ACTION_LOOP, tempStartCode);
-                }
-                if (!tempSuccess) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-            }
-            if (tempFunction == SYMBOL_BREAK) {
-                branch_t *tempBranch2 = tempBranch;
-                while (true) {
-                    int8_t tempAction = tempBranch2->action;
-                    tempBranch2->action = BRANCH_ACTION_IGNORE_HARD;
-                    if (tempAction == BRANCH_ACTION_LOOP) {
-                        break;
+                if (tempFunction == SYMBOL_IF) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
                     }
-                    tempBranch2 = tempBranch2->previous;
-                }
-            }
-            if (tempFunction == SYMBOL_CONTINUE) {
-                while (true) {
-                    if (tempBranch->action == BRANCH_ACTION_LOOP) {
-                        code = tempBranch->address;
-                        break;
+                    int8_t tempSuccess;
+                    if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
+                        tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_SOFT, 0);
+                    } else {
+                        tempSuccess = pushBranch(BRANCH_ACTION_RUN, 0);
                     }
+                    if (!tempSuccess) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_ELSE_IF) {
+                    tempBranch->action = BRANCH_ACTION_IGNORE_HARD;
+                }
+                if (tempFunction == SYMBOL_ELSE) {
+                    tempBranch->action = BRANCH_ACTION_IGNORE_HARD;
+                }
+                if (tempFunction == SYMBOL_WHILE) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int8_t tempSuccess;
+                    if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
+                        tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+                    } else {
+                        tempSuccess = pushBranch(BRANCH_ACTION_LOOP, tempStartCode);
+                    }
+                    if (!tempSuccess) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_BREAK) {
+                    branch_t *tempBranch2 = tempBranch;
+                    while (true) {
+                        int8_t tempAction = tempBranch2->action;
+                        tempBranch2->action = BRANCH_ACTION_IGNORE_HARD;
+                        if (tempAction == BRANCH_ACTION_LOOP) {
+                            break;
+                        }
+                        tempBranch2 = tempBranch2->previous;
+                    }
+                }
+                if (tempFunction == SYMBOL_CONTINUE) {
+                    while (true) {
+                        if (tempBranch->action == BRANCH_ACTION_LOOP) {
+                            code = tempBranch->address;
+                            break;
+                        }
+                        int8_t tempSuccess = popBranch();
+                        if (!tempSuccess) {
+                            reportError(ERROR_MESSAGE_BAD_CONTINUE_STATEMENT, tempStartCode);
+                            tempResult.status = EVALUATION_STATUS_QUIT;
+                            return tempResult;
+                        }
+                        tempBranch = tempBranch->previous;
+                    }
+                }
+                if (tempFunction == SYMBOL_QUIT) {
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                }
+                if (tempFunction == SYMBOL_END) {
+                    int8_t tempAction = tempBranch->action;
+                    int32_t tempAddress = tempBranch->address;
                     int8_t tempSuccess = popBranch();
                     if (!tempSuccess) {
-                        reportError(ERROR_MESSAGE_BAD_CONTINUE_STATEMENT, tempStartCode);
+                        reportError(ERROR_MESSAGE_BAD_END_STATEMENT, tempStartCode);
                         tempResult.status = EVALUATION_STATUS_QUIT;
                         return tempResult;
                     }
-                    tempBranch = tempBranch->previous;
+                    if (tempAction == BRANCH_ACTION_LOOP) {
+                        code = tempAddress;
+                    }
                 }
-            }
-            if (tempFunction == SYMBOL_QUIT) {
-                tempResult.status = EVALUATION_STATUS_QUIT;
-            }
-            if (tempFunction == SYMBOL_END) {
-                int8_t tempAction = tempBranch->action;
-                int32_t tempAddress = tempBranch->address;
-                int8_t tempSuccess = popBranch();
-                if (!tempSuccess) {
-                    reportError(ERROR_MESSAGE_BAD_END_STATEMENT, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                if (tempAction == BRANCH_ACTION_LOOP) {
-                    code = tempAddress;
-                }
-            }
-            if (tempFunction == SYMBOL_FUNCTION) {
-                uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
-                readStorageVariableName(tempBuffer, tempExpressionList[0]);
-                value_t *tempValue = findVariableValueByName(tempBuffer);
-                if (tempValue == NULL) {
-                    tempValue = createVariable(tempBuffer);
+                if (tempFunction == SYMBOL_FUNCTION) {
+                    uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+                    readStorageVariableName(tempBuffer, tempExpressionList[0]);
+                    value_t *tempValue = findVariableValueByName(tempBuffer);
                     if (tempValue == NULL) {
-                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
+                        tempValue = createVariable(tempBuffer);
+                        if (tempValue == NULL) {
+                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                            tempResult.status = EVALUATION_STATUS_QUIT;
+                            return tempResult;
+                        }
                     }
-                }
-                tempValue->type = VALUE_TYPE_FUNCTION;
-                *(int32_t *)(tempValue->data) = tempStartCode;
-                int8_t tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
-                if (!tempSuccess) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-            }
-            if (tempFunction == SYMBOL_RANDOM) {
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = (float)(rand() % 10000) / 10000.0;
-            }
-            if (tempFunction == SYMBOL_RANDOM_INTEGER) {
-                int32_t tempMinimum = *(float *)((tempArgumentList + 0)->data);
-                int32_t tempMaximum = *(float *)((tempArgumentList + 1)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = tempMinimum + (rand() % (tempMaximum - tempMinimum + 1));
-            }
-            if (tempFunction == SYMBOL_ABSOLUTE_VALUE) {
-                float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = fabs(tempNumber);
-            }
-            if (tempFunction == SYMBOL_ROUND) {
-                float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = floor(tempNumber + 0.5);
-            }
-            if (tempFunction == SYMBOL_FLOOR) {
-                float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = floor(tempNumber);
-            }
-            if (tempFunction == SYMBOL_CEILING) {
-                float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = ceil(tempNumber);
-            }
-            if (tempFunction == SYMBOL_SINE) {
-                float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = sin(tempNumber);
-            }
-            if (tempFunction == SYMBOL_COSINE) {
-                float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = cos(tempNumber);
-            }
-            if (tempFunction == SYMBOL_TANGENT) {
-                float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = tan(tempNumber);
-            }
-            if (tempFunction == SYMBOL_SQUARE_ROOT) {
-                float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = sqrt(tempNumber);
-            }
-            if (tempFunction == SYMBOL_POWER) {
-                float tempNumber1 = *(float *)((tempArgumentList + 0)->data);
-                float tempNumber2 = *(float *)((tempArgumentList + 1)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = pow(tempNumber1, tempNumber2);
-            }
-            if (tempFunction == SYMBOL_LOG) {
-                float tempNumber1 = *(float *)((tempArgumentList + 0)->data);
-                float tempNumber2 = *(float *)((tempArgumentList + 1)->data);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = log(tempNumber1) / log(tempNumber2);
-            }
-            if (tempFunction == SYMBOL_PRINT) {
-                int8_t tempResult2 = printValue(tempArgumentList + 0);
-                if (!tempResult2) {
-                    if (errorMessage != NULL) {
+                    tempValue->type = VALUE_TYPE_FUNCTION;
+                    *(int32_t *)(tempValue->data) = tempStartCode;
+                    int8_t tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+                    if (!tempSuccess) {
                         errorCode = tempStartCode;
-                    }
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                } else {
-                    tempShouldDisplayRunning = true;
-                }
-            }
-            if (tempFunction == SYMBOL_REQUEST_STRING) {
-                uint8_t tempText[REQUEST_STRING_MAXIMUM_LENGTH + 1];
-                tempText[0] = 0;
-                initializeTextEditor(tempText, REQUEST_STRING_MAXIMUM_LENGTH, false);
-                int8_t tempResult2 = runTextEditor();
-                if (!tempResult2) {
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                } else {
-                    tempResult.value.type = VALUE_TYPE_STRING;
-                    int8_t *tempString = createString(tempText);
-                    if (tempString == NULL) {
-                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
                         tempResult.status = EVALUATION_STATUS_QUIT;
                         return tempResult;
                     }
-                    *(int8_t **)(tempResult.value.data) = tempString;
-                    tempShouldDisplayRunning = true;
                 }
             }
-            if (tempFunction == SYMBOL_REQUEST_NUMBER) {
-                uint8_t tempText[REQUEST_NUMBER_MAXIMUM_LENGTH + 1];
-                tempText[0] = 0;
-                initializeTextEditor(tempText, REQUEST_NUMBER_MAXIMUM_LENGTH, true);
-                int8_t tempResult2 = runTextEditor();
-                if (!tempResult2) {
-                    tempResult.status = EVALUATION_STATUS_QUIT;
+            // Math functions.
+            if (tempFunction >= SYMBOL_RANDOM && tempFunction <= SYMBOL_LOG) {
+                if (tempFunction == SYMBOL_RANDOM) {
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = (float)(rand() % 10000) / 10000.0;
                 } else {
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = convertTextToFloat(tempText);
-                    tempShouldDisplayRunning = true;
-                }
-            }
-            if (tempFunction == SYMBOL_MENU) {
-                int8_t *tempTitle = *(int8_t **)((tempArgumentList + 0)->data);
-                int8_t *tempList = *(int8_t **)((tempArgumentList + 1)->data);
-                int8_t tempResult2 = menu(tempTitle, tempList);
-                if (tempResult2 == MENU_RESULT_ERROR) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                } else if (tempResult2 < MENU_RESULT_ESCAPE) {
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                } else {
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = tempResult2;
-                    tempShouldDisplayRunning = true;
-                }
-            }
-            if (tempFunction == SYMBOL_FILE_EXISTS) {
-                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                int8_t *tempString = *(int8_t **)tempPointer;
-                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = (tempFile >= 0);
-            }
-            if (tempFunction == SYMBOL_FILE_SIZE) {
-                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                int8_t *tempString = *(int8_t **)tempPointer;
-                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                if (tempFile < 0) {
-                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                int16_t tempSize;
-                readStorage(&tempSize, tempFile + FILE_SIZE_OFFSET, 2);
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = tempSize;
-            }
-            if (tempFunction == SYMBOL_FILE_CREATE) {
-                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                int8_t *tempString = *(int8_t **)tempPointer;
-                int32_t tempFile = fileCreate(tempString + STRING_DATA_OFFSET);
-                if (tempFile < 0) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-            }
-            if (tempFunction == SYMBOL_FILE_DELETE) {
-                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                int8_t *tempString = *(int8_t **)tempPointer;
-                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                if (tempFile < 0) {
-                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                uint8_t tempStatus = FILE_EXISTS_FALSE;
-                writeStorage(tempFile + FILE_EXISTS_OFFSET, &tempStatus, 1);
-            }
-            if (tempFunction == SYMBOL_FILE_SET_NAME) {
-                int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
-                int8_t *tempPointer2 = *(int8_t **)((tempArgumentList + 1)->data);
-                int8_t *tempString1 = *(int8_t **)tempPointer1;
-                int8_t *tempString2 = *(int8_t **)tempPointer2;
-                int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
-                if (tempFile < 0) {
-                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                int16_t tempLength = strlen(tempString2 + STRING_DATA_OFFSET);
-                writeStorage(tempFile + FILE_NAME_OFFSET, tempString2 + STRING_DATA_OFFSET, tempLength + 1);
-            }
-            if (tempFunction == SYMBOL_FILE_READ) {
-                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                float tempIndex = *(float *)((tempArgumentList + 1)->data);
-                float tempAmount = *(float *)((tempArgumentList + 2)->data);
-                int8_t *tempString = *(int8_t **)tempPointer;
-                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                if (tempFile < 0) {
-                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                int8_t *tempResult2 = fileRead(tempFile, tempIndex, tempAmount);
-                if (tempResult2 == NULL) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                tempResult.value.type = VALUE_TYPE_STRING;
-                *(int8_t **)(tempResult.value.data) = tempResult2;
-            }
-            if (tempFunction == SYMBOL_FILE_WRITE) {
-                int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
-                int8_t *tempPointer2 = *(int8_t **)((tempArgumentList + 1)->data);
-                int8_t *tempString1 = *(int8_t **)tempPointer1;
-                int8_t *tempString2 = *(int8_t **)tempPointer2;
-                int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
-                if (tempFile < 0) {
-                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                int8_t tempSuccess = fileWrite(tempFile, tempString2 + STRING_DATA_OFFSET);
-                if (!tempSuccess) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-            }
-            if (tempFunction == SYMBOL_FILE_IMPORT) {
-                int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                int8_t *tempString = *(int8_t **)tempPointer;
-                int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                if (tempFile < 0) {
-                    reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                expressionResult_t tempResult2 = runCode(tempFile + FILE_DATA_OFFSET);
-                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                    tempResult.status = tempResult2.status;
-                    return tempResult;
-                }
-            }
-            if (tempFunction == SYMBOL_NUMBER) {
-                int8_t tempType = (tempArgumentList + 0)->type;
-                if (tempType == VALUE_TYPE_NUMBER) {
-                    tempResult.value = tempArgumentList[0];
-                }
-                if (tempType == VALUE_TYPE_STRING) {
-                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempString = *(int8_t **)tempPointer;
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = convertTextToFloat(tempString + STRING_DATA_OFFSET);
-                }
-            }
-            if (tempFunction == SYMBOL_STRING) {
-                int8_t tempType = (tempArgumentList + 0)->type;
-                if (tempType == VALUE_TYPE_NUMBER) {
-                    uint8_t tempBuffer[20];
-                    convertFloatToText(tempBuffer, *(float *)((tempArgumentList + 0)->data));
-                    tempResult.value.type = VALUE_TYPE_STRING;
-                    int8_t *tempString = createString(tempBuffer);
-                    if (tempString == NULL) {
-                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
                         tempResult.status = EVALUATION_STATUS_QUIT;
                         return tempResult;
                     }
-                    *(int8_t **)(tempResult.value.data) = tempString;
                 }
-                if (tempType == VALUE_TYPE_STRING) {
-                    tempResult.value = tempArgumentList[0];
+                if (tempFunction == SYMBOL_RANDOM_INTEGER) {
+                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int32_t tempMinimum = *(float *)((tempArgumentList + 0)->data);
+                    int32_t tempMaximum = *(float *)((tempArgumentList + 1)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = tempMinimum + (rand() % (tempMaximum - tempMinimum + 1));
+                }
+                if (tempFunction == SYMBOL_ABSOLUTE_VALUE) {
+                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = fabs(tempNumber);
+                }
+                if (tempFunction == SYMBOL_ROUND) {
+                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = floor(tempNumber + 0.5);
+                }
+                if (tempFunction == SYMBOL_FLOOR) {
+                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = floor(tempNumber);
+                }
+                if (tempFunction == SYMBOL_CEILING) {
+                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = ceil(tempNumber);
+                }
+                if (tempFunction == SYMBOL_SINE) {
+                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = sin(tempNumber);
+                }
+                if (tempFunction == SYMBOL_COSINE) {
+                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = cos(tempNumber);
+                }
+                if (tempFunction == SYMBOL_TANGENT) {
+                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = tan(tempNumber);
+                }
+                if (tempFunction == SYMBOL_SQUARE_ROOT) {
+                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = sqrt(tempNumber);
+                }
+                if (tempFunction == SYMBOL_POWER) {
+                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    float tempNumber1 = *(float *)((tempArgumentList + 0)->data);
+                    float tempNumber2 = *(float *)((tempArgumentList + 1)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = pow(tempNumber1, tempNumber2);
+                }
+                if (tempFunction == SYMBOL_LOG) {
+                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    float tempNumber1 = *(float *)((tempArgumentList + 0)->data);
+                    float tempNumber2 = *(float *)((tempArgumentList + 1)->data);
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = log(tempNumber1) / log(tempNumber2);
                 }
             }
-            if (tempFunction == SYMBOL_TYPE) {
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)(tempResult.value.data) = (tempArgumentList + 0)->type;
-            }
-            if (tempFunction == SYMBOL_LENGTH) {
-                int8_t tempType = (tempArgumentList + 0)->type;
-                if (tempType == VALUE_TYPE_STRING) {
+            if (tempFunction >= SYMBOL_PRINT && tempFunction <= SYMBOL_FILE_IMPORT) {
+                if (tempFunction == SYMBOL_PRINT) {
+                    int8_t tempResult2 = printValue(tempArgumentList + 0);
+                    if (!tempResult2) {
+                        if (errorMessage != NULL) {
+                            errorCode = tempStartCode;
+                        }
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    } else {
+                        tempShouldDisplayRunning = true;
+                    }
+                }
+                if (tempFunction == SYMBOL_REQUEST_STRING) {
+                    uint8_t tempText[REQUEST_STRING_MAXIMUM_LENGTH + 1];
+                    tempText[0] = 0;
+                    initializeTextEditor(tempText, REQUEST_STRING_MAXIMUM_LENGTH, false);
+                    int8_t tempResult2 = runTextEditor();
+                    if (!tempResult2) {
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                    } else {
+                        tempResult.value.type = VALUE_TYPE_STRING;
+                        int8_t *tempString = createString(tempText);
+                        if (tempString == NULL) {
+                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                            tempResult.status = EVALUATION_STATUS_QUIT;
+                            return tempResult;
+                        }
+                        *(int8_t **)(tempResult.value.data) = tempString;
+                        tempShouldDisplayRunning = true;
+                    }
+                }
+                if (tempFunction == SYMBOL_REQUEST_NUMBER) {
+                    uint8_t tempText[REQUEST_NUMBER_MAXIMUM_LENGTH + 1];
+                    tempText[0] = 0;
+                    initializeTextEditor(tempText, REQUEST_NUMBER_MAXIMUM_LENGTH, true);
+                    int8_t tempResult2 = runTextEditor();
+                    if (!tempResult2) {
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                    } else {
+                        tempResult.value.type = VALUE_TYPE_NUMBER;
+                        *(float *)(tempResult.value.data) = convertTextToFloat(tempText);
+                        tempShouldDisplayRunning = true;
+                    }
+                }
+                if (tempFunction == SYMBOL_MENU) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING || (tempArgumentList + 1)->type != VALUE_TYPE_LIST) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int8_t *tempTitle = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempList = *(int8_t **)((tempArgumentList + 1)->data);
+                    int8_t tempResult2 = menu(tempTitle, tempList);
+                    if (tempResult2 == MENU_RESULT_ERROR) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    } else if (tempResult2 < MENU_RESULT_ESCAPE) {
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    } else {
+                        tempResult.value.type = VALUE_TYPE_NUMBER;
+                        *(float *)(tempResult.value.data) = tempResult2;
+                        tempShouldDisplayRunning = true;
+                    }
+                }
+                if (tempFunction == SYMBOL_FILE_EXISTS) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
                     int8_t *tempString = *(int8_t **)tempPointer;
+                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
                     tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+                    *(float *)(tempResult.value.data) = (tempFile >= 0);
                 }
-                if (tempType == VALUE_TYPE_LIST) {
+                if (tempFunction == SYMBOL_FILE_SIZE) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempList = *(int8_t **)tempPointer;
+                    int8_t *tempString = *(int8_t **)tempPointer;
+                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                    if (tempFile < 0) {
+                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int16_t tempSize;
+                    readStorage(&tempSize, tempFile + FILE_SIZE_OFFSET, 2);
                     tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+                    *(float *)(tempResult.value.data) = tempSize;
                 }
-            }
-            if (tempFunction == SYMBOL_INSERT) {
-                int16_t index = *(float *)((tempArgumentList + 1)->data);
-                int8_t tempResult2 = insertValueIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
-                if (!tempResult2) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
+                if (tempFunction == SYMBOL_FILE_CREATE) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempString = *(int8_t **)tempPointer;
+                    int32_t tempFile = fileCreate(tempString + STRING_DATA_OFFSET);
+                    if (tempFile < 0) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                 }
-            }
-            if (tempFunction == SYMBOL_REMOVE) {
-                int16_t index = *(float *)((tempArgumentList + 1)->data);
-                int8_t tempResult2 = removeValueFromSequence(tempArgumentList + 0, index);
-                if (!tempResult2) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
+                if (tempFunction == SYMBOL_FILE_DELETE) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempString = *(int8_t **)tempPointer;
+                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                    if (tempFile < 0) {
+                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    uint8_t tempStatus = FILE_EXISTS_FALSE;
+                    writeStorage(tempFile + FILE_EXISTS_OFFSET, &tempStatus, 1);
                 }
-            }
-            if (tempFunction == SYMBOL_SUBSEQUENCE) {
-                int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
-                int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
-                tempResult.value = getSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
-                if (tempResult.value.type == VALUE_TYPE_MISSING) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-            }
-            if (tempFunction == SYMBOL_INSERT_SUBSEQUENCE) {
-                int16_t index = *(float *)((tempArgumentList + 1)->data);
-                int8_t tempResult2 = insertSubsequenceIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
-                if (!tempResult2) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-            }
-            if (tempFunction == SYMBOL_REMOVE_SUBSEQUENCE) {
-                int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
-                int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
-                int8_t tempResult2 = removeSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
-                if (!tempResult2) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-            }
-            if (tempFunction == SYMBOL_COPY) {
-                int8_t tempType = (tempArgumentList + 0)->type;
-                if (tempType == VALUE_TYPE_STRING) {
+                if (tempFunction == SYMBOL_FILE_SET_NAME) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING || (tempArgumentList + 1)->type != VALUE_TYPE_STRING) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempPointer2 = *(int8_t **)((tempArgumentList + 1)->data);
                     int8_t *tempString1 = *(int8_t **)tempPointer1;
-                    int16_t tempLength = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
-                    int8_t *tempPointer2 = createEmptyString(tempLength);
-                    if (tempPointer2 == NULL) {
-                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
                     int8_t *tempString2 = *(int8_t **)tempPointer2;
-                    memcpy(tempString2 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength + 1);
-                    tempResult.value.type = VALUE_TYPE_STRING;
-                    *(int8_t **)(tempResult.value.data) = tempPointer2;
-                }
-                if (tempType == VALUE_TYPE_LIST) {
-                    int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempList1 = *(int8_t **)tempPointer1;
-                    int16_t tempLength = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
-                    int8_t *tempPointer2 = createEmptyList(tempLength);
-                    if (tempPointer2 == NULL) {
-                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                    int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
+                    if (tempFile < 0) {
+                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
                         tempResult.status = EVALUATION_STATUS_QUIT;
                         return tempResult;
                     }
-                    int8_t *tempList2 = *(int8_t **)tempPointer2;
-                    memcpy(tempList2 + LIST_DATA_OFFSET, tempList1 + LIST_DATA_OFFSET, tempLength * sizeof(value_t));
-                    tempResult.value.type = VALUE_TYPE_LIST;
-                    *(int8_t **)(tempResult.value.data) = tempPointer2;
+                    int16_t tempLength = strlen(tempString2 + STRING_DATA_OFFSET);
+                    writeStorage(tempFile + FILE_NAME_OFFSET, tempString2 + STRING_DATA_OFFSET, tempLength + 1);
+                }
+                if (tempFunction == SYMBOL_FILE_READ) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING || (tempArgumentList + 1)->type != VALUE_TYPE_NUMBER
+                            || (tempArgumentList + 2)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                    float tempIndex = *(float *)((tempArgumentList + 1)->data);
+                    float tempAmount = *(float *)((tempArgumentList + 2)->data);
+                    int8_t *tempString = *(int8_t **)tempPointer;
+                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                    if (tempFile < 0) {
+                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int8_t *tempResult2 = fileRead(tempFile, tempIndex, tempAmount);
+                    if (tempResult2 == NULL) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    tempResult.value.type = VALUE_TYPE_STRING;
+                    *(int8_t **)(tempResult.value.data) = tempResult2;
+                }
+                if (tempFunction == SYMBOL_FILE_WRITE) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING || (tempArgumentList + 1)->type != VALUE_TYPE_STRING) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempPointer2 = *(int8_t **)((tempArgumentList + 1)->data);
+                    int8_t *tempString1 = *(int8_t **)tempPointer1;
+                    int8_t *tempString2 = *(int8_t **)tempPointer2;
+                    int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
+                    if (tempFile < 0) {
+                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int8_t tempSuccess = fileWrite(tempFile, tempString2 + STRING_DATA_OFFSET);
+                    if (!tempSuccess) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_FILE_IMPORT) {
+                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                    int8_t *tempString = *(int8_t **)tempPointer;
+                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+                    if (tempFile < 0) {
+                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    expressionResult_t tempResult2 = runCode(tempFile + FILE_DATA_OFFSET);
+                    if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                        tempResult.status = tempResult2.status;
+                        return tempResult;
+                    }
+                }
+            }
+            if (tempFunction >= SYMBOL_NUMBER && tempFunction <= SYMBOL_REMOVE_SUBSEQUENCE) {
+                if (tempFunction == SYMBOL_NUMBER) {
+                    int8_t tempType = (tempArgumentList + 0)->type;
+                    if (tempType == VALUE_TYPE_NUMBER) {
+                        tempResult.value = tempArgumentList[0];
+                    } else if (tempType == VALUE_TYPE_STRING) {
+                        int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                        int8_t *tempString = *(int8_t **)tempPointer;
+                        tempResult.value.type = VALUE_TYPE_NUMBER;
+                        *(float *)(tempResult.value.data) = convertTextToFloat(tempString + STRING_DATA_OFFSET);
+                    } else {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_STRING) {
+                    int8_t tempType = (tempArgumentList + 0)->type;
+                    if (tempType == VALUE_TYPE_NUMBER) {
+                        uint8_t tempBuffer[20];
+                        convertFloatToText(tempBuffer, *(float *)((tempArgumentList + 0)->data));
+                        tempResult.value.type = VALUE_TYPE_STRING;
+                        int8_t *tempString = createString(tempBuffer);
+                        if (tempString == NULL) {
+                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                            tempResult.status = EVALUATION_STATUS_QUIT;
+                            return tempResult;
+                        }
+                        *(int8_t **)(tempResult.value.data) = tempString;
+                    } else if (tempType == VALUE_TYPE_STRING) {
+                        tempResult.value = tempArgumentList[0];
+                    } else {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_TYPE) {
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = (tempArgumentList + 0)->type;
+                }
+                if (tempFunction == SYMBOL_LENGTH) {
+                    int8_t tempType = (tempArgumentList + 0)->type;
+                    if (tempType == VALUE_TYPE_STRING) {
+                        int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                        int8_t *tempString = *(int8_t **)tempPointer;
+                        tempResult.value.type = VALUE_TYPE_NUMBER;
+                        *(float *)(tempResult.value.data) = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+                    } else if (tempType == VALUE_TYPE_LIST) {
+                        int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
+                        int8_t *tempList = *(int8_t **)tempPointer;
+                        tempResult.value.type = VALUE_TYPE_NUMBER;
+                        *(float *)(tempResult.value.data) = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+                    } else {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_COPY) {
+                    int8_t tempType = (tempArgumentList + 0)->type;
+                    if (tempType == VALUE_TYPE_STRING) {
+                        int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
+                        int8_t *tempString1 = *(int8_t **)tempPointer1;
+                        int16_t tempLength = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
+                        int8_t *tempPointer2 = createEmptyString(tempLength);
+                        if (tempPointer2 == NULL) {
+                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                            tempResult.status = EVALUATION_STATUS_QUIT;
+                            return tempResult;
+                        }
+                        int8_t *tempString2 = *(int8_t **)tempPointer2;
+                        memcpy(tempString2 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength + 1);
+                        tempResult.value.type = VALUE_TYPE_STRING;
+                        *(int8_t **)(tempResult.value.data) = tempPointer2;
+                    } else if (tempType == VALUE_TYPE_LIST) {
+                        int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
+                        int8_t *tempList1 = *(int8_t **)tempPointer1;
+                        int16_t tempLength = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
+                        int8_t *tempPointer2 = createEmptyList(tempLength);
+                        if (tempPointer2 == NULL) {
+                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
+                            tempResult.status = EVALUATION_STATUS_QUIT;
+                            return tempResult;
+                        }
+                        int8_t *tempList2 = *(int8_t **)tempPointer2;
+                        memcpy(tempList2 + LIST_DATA_OFFSET, tempList1 + LIST_DATA_OFFSET, tempLength * sizeof(value_t));
+                        tempResult.value.type = VALUE_TYPE_LIST;
+                        *(int8_t **)(tempResult.value.data) = tempPointer2;
+                    } else {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_INSERT) {
+                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int16_t index = *(float *)((tempArgumentList + 1)->data);
+                    int8_t tempResult2 = insertValueIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
+                    if (!tempResult2) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_REMOVE) {
+                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int16_t index = *(float *)((tempArgumentList + 1)->data);
+                    int8_t tempResult2 = removeValueFromSequence(tempArgumentList + 0, index);
+                    if (!tempResult2) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_SUBSEQUENCE) {
+                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER || (tempArgumentList + 2)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
+                    int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
+                    tempResult.value = getSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
+                    if (tempResult.value.type == VALUE_TYPE_MISSING) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_INSERT_SUBSEQUENCE) {
+                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int16_t index = *(float *)((tempArgumentList + 1)->data);
+                    int8_t tempResult2 = insertSubsequenceIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
+                    if (!tempResult2) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                }
+                if (tempFunction == SYMBOL_REMOVE_SUBSEQUENCE) {
+                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER || (tempArgumentList + 2)->type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
+                    int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
+                    int8_t tempResult2 = removeSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
+                    if (!tempResult2) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                 }
             }
             if (tempShouldDisplayRunning) {

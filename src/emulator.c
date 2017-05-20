@@ -665,6 +665,12 @@ const int8_t MESSAGE_RUNNING[] PROGMEM = "Running...";
 const int8_t ERROR_MESSAGE_BAD_START_OF_EXPRESSION[] PROGMEM = "ERROR: Bad\nstart of\nexpression.";
 const int8_t ERROR_MESSAGE_BAD_END_STATEMENT[] PROGMEM = "ERROR: Bad\nend statement.";
 const int8_t ERROR_MESSAGE_BAD_CONTINUE_STATEMENT[] PROGMEM = "ERROR: Bad\ncontinue\nstatement.";
+const int8_t ERROR_MESSAGE_BAD_ARGUMENT_TYPE[] PROGMEM = "ERROR: Bad\nargument type.";
+const int8_t ERROR_MESSAGE_MISSING_APOSTROPHE[] PROGMEM = "ERROR: Missing\napostrophe.";
+const int8_t ERROR_MESSAGE_MISSING_QUOTATION_MARK[] PROGMEM = "ERROR: Missing\nquotation mark.";
+const int8_t ERROR_MESSAGE_MISSING_BRACKET[] PROGMEM = "ERROR: Missing\nbracket.";
+const int8_t ERROR_MESSAGE_MISSING_PARENTHESIS[] PROGMEM = "ERROR: Missing\nparenthesis.";
+const int8_t ERROR_MESSAGE_MISSING_COMMA[] PROGMEM = "ERROR: Missing\ncomma.";
 
 typedef struct value {
     int8_t type;
@@ -2076,6 +2082,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     return tempResult;
                 }
                 code = tempResult2.nextCode;
+                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
+                    reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 if (*(float *)(tempResult2.value.data) != 0.0) {
                     tempBranch->action = BRANCH_ACTION_RUN;
                 }
@@ -2130,7 +2141,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     tempSymbol = '\n';
                 }
             }
-            // TODO: Check for apostrophe.
+            tempSymbol = readStorageInt8(code);
+            if (tempSymbol != '\'') {
+                reportError(ERROR_MESSAGE_MISSING_APOSTROPHE, tempStartCode);
+                tempResult.status = EVALUATION_STATUS_QUIT;
+                return tempResult;
+            }
             code += 1;
             tempResult.value.type = VALUE_TYPE_NUMBER;
             *(float *)&(tempResult.value.data) = tempSymbol;
@@ -2143,6 +2159,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             int8_t tempIsEscaped = false;
             while (true) {
                 uint8_t tempSymbol = readStorageInt8(code);
+                if (tempSymbol == 0) {
+                    reportError(ERROR_MESSAGE_MISSING_QUOTATION_MARK, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 if (tempIsEscaped) {
                     if (tempSymbol == 'N') {
                         *(tempStringContents + STRING_DATA_OFFSET + index) = '\n';
@@ -2175,6 +2196,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             *(int8_t **)(tempResult.value.data) = tempList;
             while (true) {
                 uint8_t tempSymbol = readStorageInt8(code);
+                if (tempSymbol == '\n' || tempSymbol == 0) {
+                    reportError(ERROR_MESSAGE_MISSING_BRACKET, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 if (tempSymbol == ']') {
                     code += 1;
                     break;
@@ -2207,7 +2233,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             tempResult.destinationType = tempResult2.destinationType;
             tempResult.destination = tempResult2.destination;
             tempResult.value = tempResult2.value;
-            // TODO: Check for parenthesis.
+            tempSymbol = readStorageInt8(code);
+            if (tempSymbol != ')') {
+                reportError(ERROR_MESSAGE_MISSING_PARENTHESIS, tempStartCode);
+                tempResult.status = EVALUATION_STATUS_QUIT;
+                return tempResult;
+            }
             code += 1;
         } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
             uint8_t tempFunction = tempSymbol;
@@ -2233,7 +2264,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempTreasureTracker2.amount += 1;
                 code = tempResult2.nextCode;
                 if (index < tempArgumentAmount - 1) {
-                    // TODO: Check for comma.
+                    int8_t tempSymbol = readStorageInt8(code);
+                    if (tempSymbol != ',') {
+                        reportError(ERROR_MESSAGE_MISSING_COMMA, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     code += 1;
                 }
                 index += 1;
@@ -2658,7 +2694,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     return tempResult;
                 }
                 code = tempResult2.nextCode;
-                // TODO: Check for bracket.
+                int8_t tempSymbol = readStorageInt8(code);
+                if (tempSymbol != ']') {
+                    reportError(ERROR_MESSAGE_MISSING_BRACKET, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 code += 1;
                 int16_t index = *(float *)(tempResult2.value.data);
                 if (tempResult.value.type == VALUE_TYPE_LIST) {
@@ -2947,7 +2988,6 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         }
                     }
                 } else {
-                    // TODO: Check for invalid symbols.
                     break;
                 }
             }

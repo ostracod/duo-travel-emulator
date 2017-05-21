@@ -1946,8 +1946,8 @@ static int32_t readStorageVariableName(uint8_t *destination, int32_t address) {
     return address;
 }
 
-static value_t *findVariableValueByName(uint8_t *name) {
-    int8_t *tempVariable = localScope + SCOPE_VARIABLE_OFFSET;
+static value_t *findVariableValueByNameInScope(uint8_t *name, int8_t *scope) {
+    int8_t *tempVariable = scope + SCOPE_VARIABLE_OFFSET;
     while (tempVariable != NULL) {
         if (strcmp(name, tempVariable + VARIABLE_NAME_OFFSET) == 0) {
             return (value_t *)(tempVariable + VARIABLE_VALUE_OFFSET);
@@ -1955,6 +1955,14 @@ static value_t *findVariableValueByName(uint8_t *name) {
         tempVariable = *(int8_t **)(tempVariable + VARIABLE_NEXT_OFFSET);
     }
     return NULL;
+}
+
+static value_t *findVariableValueByName(uint8_t *name) {
+    value_t *output = findVariableValueByNameInScope(name, localScope);
+    if (output != NULL) {
+        return output;
+    }
+    return findVariableValueByNameInScope(name, globalScope);
 }
 
 static value_t *createVariable(uint8_t *name) {

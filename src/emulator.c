@@ -670,6 +670,7 @@ const int8_t MESSAGE_RUNNING[] PROGMEM = "Running...";
 const int8_t ERROR_MESSAGE_BAD_START_OF_EXPRESSION[] PROGMEM = "ERROR: Bad\nstart of\nexpression.";
 const int8_t ERROR_MESSAGE_BAD_END_STATEMENT[] PROGMEM = "ERROR: Bad\nend statement.";
 const int8_t ERROR_MESSAGE_BAD_CONTINUE_STATEMENT[] PROGMEM = "ERROR: Bad\ncontinue\nstatement.";
+const int8_t ERROR_MESSAGE_BAD_BREAK_STATEMENT[] PROGMEM = "ERROR: Bad\nbreak statement.";
 const int8_t ERROR_MESSAGE_BAD_ARGUMENT_TYPE[] PROGMEM = "ERROR: Bad\nargument type.";
 const int8_t ERROR_MESSAGE_MISSING_APOSTROPHE[] PROGMEM = "ERROR: Missing\napostrophe.";
 const int8_t ERROR_MESSAGE_MISSING_QUOTATION_MARK[] PROGMEM = "ERROR: Missing\nquotation mark.";
@@ -2644,6 +2645,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             break;
                         }
                         tempBranch2 = tempBranch2->previous;
+                        if (tempBranch2 == NULL) {
+                            reportError(ERROR_MESSAGE_BAD_BREAK_STATEMENT, tempStartCode);
+                            tempResult.status = EVALUATION_STATUS_QUIT;
+                            return tempResult;
+                        }
                     }
                 }
                 if (tempFunction == SYMBOL_CONTINUE) {
@@ -4032,6 +4038,9 @@ const int8_t *convertTestErrorToErrorMessage(int8_t *name) {
     }
     if (strcmp(name, "BAD_CONTINUE_STATEMENT") == 0) {
         return ERROR_MESSAGE_BAD_CONTINUE_STATEMENT;
+    }
+    if (strcmp(name, "BAD_BREAK_STATEMENT") == 0) {
+        return ERROR_MESSAGE_BAD_BREAK_STATEMENT;
     }
     if (strcmp(name, "BAD_ARGUMENT_TYPE") == 0) {
         return ERROR_MESSAGE_BAD_ARGUMENT_TYPE;

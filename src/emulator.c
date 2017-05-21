@@ -4167,6 +4167,52 @@ const int8_t *convertTestErrorToErrorMessage(int8_t *name) {
     return NULL;
 }
 
+int8_t convertTestKeyToKey(int8_t *name) {
+    if (strcmp(name, "CURSOR_LEFT") == 0) {
+        return KEY_CURSOR_LEFT;
+    }
+    if (strcmp(name, "CURSOR_RIGHT") == 0) {
+        return KEY_CURSOR_RIGHT;
+    }
+    if (strcmp(name, "CURSOR_UP") == 0) {
+        return KEY_CURSOR_UP;
+    }
+    if (strcmp(name, "CURSOR_DOWN") == 0) {
+        return KEY_CURSOR_DOWN;
+    }
+    if (strcmp(name, "SYMBOL_LEFT") == 0) {
+        return KEY_SYMBOL_LEFT;
+    }
+    if (strcmp(name, "SYMBOL_RIGHT") == 0) {
+        return KEY_SYMBOL_RIGHT;
+    }
+    if (strcmp(name, "SYMBOL_UP") == 0) {
+        return KEY_SYMBOL_UP;
+    }
+    if (strcmp(name, "SYMBOL_DOWN") == 0) {
+        return KEY_SYMBOL_DOWN;
+    }
+    if (strcmp(name, "SELECT_OPTION") == 0) {
+        return KEY_SELECT_OPTION;
+    }
+    if (strcmp(name, "DELETE") == 0) {
+        return KEY_DELETE;
+    }
+    if (strcmp(name, "NEWLINE") == 0) {
+        return KEY_NEWLINE;
+    }
+    if (strcmp(name, "ESCAPE") == 0) {
+        return KEY_ESCAPE;
+    }
+    if (strcmp(name, "FINISH") == 0) {
+        return KEY_FINISH;
+    }
+    if (strcmp(name, "CLEAR_LINE") == 0) {
+        return KEY_CLEAR_LINE;
+    }
+    return -1;
+}
+
 int8_t evaluateNextTestCommand() {
     int8_t output = -1;
     int32_t tempLength;
@@ -4233,7 +4279,7 @@ int8_t evaluateNextTestCommand() {
         runFile(testProgramFile);
     }
     if (strcmp(tempCommand, "PRESS_KEY") == 0) {
-        
+        output = convertTestKeyToKey(tempArgument);
     }
     if (strcmp(tempCommand, "EXPECT_OUTPUT") == 0) {
         if (testOutput == NULL) {

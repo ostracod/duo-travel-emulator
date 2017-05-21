@@ -2177,11 +2177,12 @@ static int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t 
         memcpy(tempString + STRING_DATA_OFFSET + index + 1, tempString + STRING_DATA_OFFSET + index, tempLength - index + 1);
         *(tempString + STRING_DATA_OFFSET + index) = tempSymbol;
         return true;
-    }
-    if (sequence->type == VALUE_TYPE_LIST) {
+    } else if (sequence->type == VALUE_TYPE_LIST) {
         return insertListValue(*(int8_t **)(sequence->data), index, value);
+    } else {
+        errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
+        return false;
     }
-    return false;
 }
 
 static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startIndex, int16_t endIndex) {
@@ -2201,8 +2202,7 @@ static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startInde
             return false;
         }
         return true;
-    }
-    if (sequence->type == VALUE_TYPE_LIST) {
+    } else if (sequence->type == VALUE_TYPE_LIST) {
         int8_t *tempPointer = *(int8_t **)(sequence->data);
         int8_t *tempList = *(int8_t **)tempPointer;
         int16_t tempLength1 = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
@@ -2218,8 +2218,10 @@ static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startInde
             return false;
         }
         return true;
+    } else {
+        errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
+        return false;
     }
-    return true;
 }
 
 static int8_t removeValueFromSequence(value_t *sequence, int16_t index) {
@@ -2248,8 +2250,7 @@ static value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex,
         *(tempString2 + STRING_DATA_OFFSET + tempLength2) = 0;
         output.type = VALUE_TYPE_STRING;
         *(int8_t **)(output.data) = tempPointer2;
-    }
-    if (sequence->type == VALUE_TYPE_LIST) {
+    } else if (sequence->type == VALUE_TYPE_LIST) {
         int8_t *tempPointer1 = *(int8_t **)(sequence->data);
         int8_t *tempList1 = *(int8_t **)tempPointer1;
         int16_t tempLength1 = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
@@ -2267,6 +2268,8 @@ static value_t getSubsequenceFromSequence(value_t *sequence, int16_t startIndex,
         memcpy(tempList2 + LIST_DATA_OFFSET, tempList1 + LIST_DATA_OFFSET + startIndex * sizeof(value_t), tempLength2 * sizeof(value_t));
         output.type = VALUE_TYPE_LIST;
         *(int8_t **)(output.data) = tempPointer2;
+    } else {
+        errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
     }
     return output;
 }
@@ -2295,8 +2298,7 @@ static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, va
         memcpy(tempString1 + STRING_DATA_OFFSET + index + tempLength2, tempString1 + STRING_DATA_OFFSET + index, tempLength1 - index + 1);
         memcpy(tempString1 + STRING_DATA_OFFSET + index, tempString2 + STRING_DATA_OFFSET, tempLength2);
         return true;
-    }
-    if (sequence->type == VALUE_TYPE_LIST) {
+    } else if (sequence->type == VALUE_TYPE_LIST) {
         if (subsequence->type != VALUE_TYPE_LIST) {
             errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
             return false;
@@ -2319,8 +2321,10 @@ static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, va
         memcpy(tempList1 + LIST_DATA_OFFSET + (index + tempLength2) * sizeof(value_t), tempList1 + LIST_DATA_OFFSET + index * sizeof(value_t), (tempLength1 - index) * sizeof(value_t));
         memcpy(tempList1 + LIST_DATA_OFFSET + index * sizeof(value_t), tempList2 + LIST_DATA_OFFSET, tempLength2 * sizeof(value_t));
         return true;
+    } else {
+        errorMessage = ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
+        return false;
     }
-    return false;
 }
 
 static int8_t stringsAreEqual(int8_t *string1, int8_t *string2) {

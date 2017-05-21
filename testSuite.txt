@@ -1,0 +1,5 @@
+START_TEST Number literal
+LOAD print:123
+RUN
+EXPECT_OUTPUT 123
+STOP_TEST

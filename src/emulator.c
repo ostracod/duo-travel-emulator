@@ -16,6 +16,8 @@
 #define false 0
 #define PROGMEM
 
+#define IS_EMULATOR
+
 #define DISPLAY_WIDTH 16
 #define DISPLAY_HEIGHT 2
 #define SYMBOL_SET_NAME_WIDTH 5
@@ -727,6 +729,16 @@ int32_t windowHeight;
 int8_t displayBuffer[DISPLAY_WIDTH * DISPLAY_HEIGHT];
 int8_t storageFilePath[] = "./storage.dat";
 FILE *storageFile;
+int8_t isTesting = false;
+uint8_t testStorage[STORAGE_SIZE];
+int8_t *testOutput = NULL;
+int8_t testIsFinished = false;
+int8_t testSuiteIsFinished = false;
+int8_t testSuiteFilePath[] = "./testSuite.txt";
+FILE *testSuiteFile;
+int32_t testProgramFile;
+int8_t testHasFailed;
+int8_t testSuiteHasFailed;
 
 int8_t memory[1200];
 int8_t *firstAllocation = NULL;
@@ -799,6 +811,9 @@ float convertTextToFloat(int8_t *text) {
 }
 
 void displayCharacter(int8_t posX, int8_t posY, int8_t character) {
+    if (isTesting) {
+        return;
+    }
     if (posX < 0 || posX >= DISPLAY_WIDTH || posY < 0 || posY >= DISPLAY_HEIGHT) {
         return;
     }
@@ -809,8 +824,12 @@ void displayCharacter(int8_t posX, int8_t posY, int8_t character) {
 }
 
 void handleResize();
+int8_t getTestKey();
 
 int8_t getKey() {
+    if (isTesting) {
+        return getTestKey();
+    }
     while (true) {
         int32_t tempKey = getch();
         if (tempKey == KEY_RESIZE) {
@@ -862,6 +881,9 @@ int8_t getKey() {
 }
 
 void drawDisplayBuffer() {
+    if (isTesting) {
+        return;
+    }
     attron(COLOR_PAIR(BLACK_ON_WHITE));
     int8_t index = 0;
     int32_t tempPosY = 0;
@@ -879,6 +901,9 @@ void drawDisplayBuffer() {
 }
 
 void drawBackground() {
+    if (isTesting) {
+        return;
+    }
     int32_t tempPosY = 0;
     while (tempPosY < windowHeight) {
         int32_t tempPosX = 0;
@@ -904,6 +929,9 @@ void drawBackground() {
 }
 
 void handleResize() {
+    if (isTesting) {
+        return;
+    }
     int32_t tempWidth;
     int32_t tempHeight;
     getmaxyx(window, tempHeight, tempWidth);
@@ -917,11 +945,19 @@ void handleResize() {
 }
 
 void readStorage(void *destination, int32_t address, int32_t amount) {
+    if (isTesting) {
+        memcpy(destination, testStorage + address, amount);
+        return;
+    }
     fseek(storageFile, address, SEEK_SET);
     fread(destination, 1, amount, storageFile);
 }
 
 void writeStorage(int32_t address, void *source, int32_t amount) {
+    if (isTesting) {
+        memcpy(testStorage + address, source, amount);
+        return;
+    }
     fseek(storageFile, address, SEEK_SET);
     fwrite(source, 1, amount, storageFile);
 }
@@ -1309,6 +1345,9 @@ static int8_t *seekTextRow(int8_t *text, int16_t posY) {
 }
 
 static int8_t printText(int8_t *text) {
+    #ifdef IS_EMULATOR
+        testOutput = text;
+    #endif
     int16_t tempPosY = 0;
     int8_t *tempText = text;
     clearDisplay();
@@ -3876,23 +3915,181 @@ static void mainMenu() {
     }
 }
 
+void appendSymbolToTestProgramFile(uint8_t symbol) {
+    int16_t tempSize;
+    readStorage(&tempSize, testProgramFile + FILE_SIZE_OFFSET, 2);
+    writeStorage(testProgramFile + FILE_DATA_OFFSET + tempSize, &symbol, 1);
+    tempSize += 1;
+    int8_t tempData = 0;
+    writeStorage(testProgramFile + FILE_DATA_OFFSET + tempSize, &tempData, 1);
+    writeStorage(testProgramFile + FILE_SIZE_OFFSET, &tempSize, 2);
+}
+
+void loadTestExpression(int8_t *text) {
+    int32_t index = 0;
+    while (true) {
+        uint8_t tempSymbol;
+        int8_t tempHasFoundSymbol = false;
+        int8_t tempSelectedSymbolLength = 0;
+        int16_t tempIndex = 0;
+        while (tempIndex < sizeof(SYMBOL_TEXT_LIST) / sizeof(*SYMBOL_TEXT_LIST)) {
+            const int8_t *tempSymbolText = SYMBOL_TEXT_LIST[tempIndex];
+            int8_t tempLength = strlen(tempSymbolText);
+            if (tempLength > tempSelectedSymbolLength) {
+                if (memcmp(text + index, tempSymbolText, tempLength) == 0) {
+                    tempSymbol = 128 + tempIndex;
+                    tempHasFoundSymbol = true;
+                    tempSelectedSymbolLength = tempLength;
+                }
+            }
+            tempIndex += 1;
+        }
+        if (tempHasFoundSymbol) {
+            index += tempSelectedSymbolLength;
+        } else {
+            tempSymbol = text[index];
+            if (tempSymbol == 0) {
+                break;
+            }
+            index += 1;
+        }
+        appendSymbolToTestProgramFile(tempSymbol);
+    }
+    appendSymbolToTestProgramFile('\n');
+}
+
+int8_t evaluateNextTestCommand() {
+    int8_t output = -1;
+    int32_t tempLength;
+    size_t tempSize;
+    int8_t *tempLine = NULL;
+    tempLength = getline((char **)&tempLine, &tempSize, testSuiteFile);
+    if (tempLength < 0) {
+        testIsFinished = true;
+        testSuiteIsFinished = true;
+        return -1;
+    }
+    int8_t *tempCommand = tempLine;
+    int8_t *tempArgument;
+    int8_t tempHasArgument = true;
+    int32_t index = 0;
+    while (true) {
+        int8_t tempCharacter = tempLine[index];
+        if (tempCharacter == ' ') {
+            tempLine[index] = 0;
+            break;
+        }
+        if (tempCharacter == '\n') {
+            tempLine[index] = 0;
+            tempHasArgument = false;
+            break;
+        }
+        if (tempCharacter == 0) {
+            tempHasArgument = false;
+            break;
+        }
+        index += 1;
+    }
+    if (tempHasArgument) {
+        index += 1;
+        tempArgument = tempLine + index;
+        while (true) {
+            int8_t tempCharacter = tempLine[index];
+            if (tempCharacter == '\n') {
+                tempLine[index] = 0;
+                break;
+            }
+            if (tempCharacter == 0) {
+                break;
+            }
+            index += 1;
+        }
+    }
+    if (strcmp(tempCommand, "START_TEST") == 0) {
+        printf("----------Running test: %s\n", tempArgument);
+        testIsFinished = false;
+        int32_t index = 0;
+        while (index < STORAGE_SIZE) {
+            testStorage[index] = 0xFF;
+            index += 1;
+        }
+        testProgramFile = fileCreate("TEST");
+        testOutput = NULL;
+    }
+    if (strcmp(tempCommand, "LOAD") == 0) {
+        loadTestExpression(tempArgument);
+    }
+    if (strcmp(tempCommand, "RUN") == 0) {
+        runFile(testProgramFile);
+    }
+    if (strcmp(tempCommand, "PRESS_KEY") == 0) {
+        
+    }
+    if (strcmp(tempCommand, "EXPECT_OUTPUT") == 0) {
+        if (testOutput == NULL) {
+            printf("Missing output\n");
+            testHasFailed = true;
+            testSuiteHasFailed = true;
+        } else {
+            if (strcmp(tempArgument, testOutput) != 0) {
+                printf("Expected: %s\n", tempArgument);
+                printf("Found: %s\n", testOutput);
+                testHasFailed = true;
+                testSuiteHasFailed = true;
+            }
+        }
+    }
+    if (strcmp(tempCommand, "EXPECT_ERROR") == 0) {
+        
+    }
+    if (strcmp(tempCommand, "STOP_TEST") == 0) {
+        if (testHasFailed) {
+            printf("FAIL\n");
+        } else {
+            printf("PASS\n");
+        }
+        testIsFinished = true;
+    }
+    free(tempLine);
+    return output;
+}
+
+int8_t getTestKey() {
+    while (!testIsFinished) {
+        int8_t tempKey = evaluateNextTestCommand();
+        if (tempKey >= 0) {
+            return tempKey;
+        }
+    }
+    return KEY_ESCAPE;
+}
+
+void runTestSuite() {
+    isTesting = true;
+    testSuiteFile = fopen(testSuiteFilePath, "r");
+    while (!testSuiteIsFinished) {
+        evaluateNextTestCommand();
+    }
+    fclose(testSuiteFile);
+    printf("========================================\n");
+    printf("Test suite result:\n");
+    if (testSuiteHasFailed) {
+        printf("> > > FAIL < < <\n");
+    } else {
+        printf("> > > PASS < < <\n");
+    }
+}
+
 int main(int argc, const char *argv[]) {
 
     srand(time(NULL));
     
-    // TEST CODE.
-    /*
-    int8_t *tempAllocation1 = allocate(30, 0);
-    int8_t *tempAllocation2 = allocate(30, 0);
-    int8_t *tempAllocation3 = allocate(30, 0);
-    deallocate(tempAllocation2);
-    int8_t *tempAllocation4 = allocate(40, 0);
-    printf("%ld\n", tempAllocation1 - memory);
-    printf("%ld\n", tempAllocation2 - memory);
-    printf("%ld\n", tempAllocation3 - memory);
-    printf("%ld\n", tempAllocation4 - memory);
-    return 0;
-    */
+    if (argc == 2) {
+        if (strcmp(argv[1], "test") == 0) {
+            runTestSuite();
+            return 0;
+        }
+    }
     
     storageFile = fopen(storageFilePath, "r+");
     if (storageFile == NULL) {
@@ -3922,8 +4119,6 @@ int main(int argc, const char *argv[]) {
     init_pair(BLACK_ON_WHITE, COLOR_BLACK, COLOR_WHITE);
     init_pair(WHITE_ON_CYAN, COLOR_WHITE, COLOR_CYAN);
     handleResize();
-
-    //scrambleMemory();
     
     mainMenu();
     

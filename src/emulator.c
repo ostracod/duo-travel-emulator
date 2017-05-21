@@ -3324,6 +3324,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 if (tempResult.value.type == VALUE_TYPE_LIST) {
                     int8_t *tempPointer = *(int8_t **)(tempResult.value.data);
                     int8_t *tempList = *(int8_t **)tempPointer;
+                    int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+                    if (index < 0 || index >= tempLength) {
+                        reportError(ERROR_MESSAGE_BAD_INDEX, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
                     tempResult.destinationType = DESTINATION_TYPE_VALUE;
                     *(value_t **)&(tempResult.destination) = tempValue;
@@ -3331,6 +3337,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 } else if (tempResult.value.type == VALUE_TYPE_STRING) {
                     int8_t *tempPointer = *(int8_t **)(tempResult.value.data);
                     int8_t *tempString = *(int8_t **)tempPointer;
+                    int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+                    if (index < 0 || index >= tempLength) {
+                        reportError(ERROR_MESSAGE_BAD_INDEX, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     uint8_t *tempSymbol = tempString + STRING_DATA_OFFSET + index;
                     tempResult.destinationType = DESTINATION_TYPE_SYMBOL;
                     tempResult.destination = tempSymbol;

@@ -3531,9 +3531,19 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                                 tempNumber *= tempOperand2Float;
                             }
                             if (tempSymbol == SYMBOL_DIVIDE_ASSIGN) {
+                                if (tempOperand2Float == 0.0) {
+                                    reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, tempStartCode);
+                                    tempResult.status = EVALUATION_STATUS_QUIT;
+                                    return tempResult;
+                                }
                                 tempNumber /= tempOperand2Float;
                             }
                             if (tempSymbol == SYMBOL_MODULUS_ASSIGN) {
+                                if (tempOperand2Float == 0.0) {
+                                    reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, tempStartCode);
+                                    tempResult.status = EVALUATION_STATUS_QUIT;
+                                    return tempResult;
+                                }
                                 tempNumber = tempOperand1Int % tempOperand2Int;
                             }
                             if (tempSymbol == SYMBOL_BOOLEAN_AND_ASSIGN) {

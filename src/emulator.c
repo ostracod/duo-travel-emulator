@@ -1807,6 +1807,21 @@ static int32_t fileCreate(int8_t *name) {
     return -1;
 }
 
+static int8_t fileSetName(int32_t address, int8_t *newName) {
+    int16_t tempLength = strlen(newName);
+    if (tempLength > FILE_NAME_MAXIMUM_LENGTH) {
+        errorMessage = ERROR_MESSAGE_NAME_IS_TOO_LONG;
+        return false;
+    }
+    int32_t tempFile = fileFindByName(newName);
+    if (tempFile >= 0) {
+        errorMessage = ERROR_MESSAGE_FILE_EXISTS;
+        return false;
+    }
+    writeStorage(address + FILE_NAME_OFFSET, newName, tempLength + 1);
+    return true;
+}
+
 static int8_t *fileRead(int32_t address, int16_t index, int16_t amount) {
     int16_t tempSize;
     readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
@@ -1874,8 +1889,12 @@ static void promptRenameFile(int32_t address) {
     if (!tempResult) {
         return;
     }
-    writeStorage(address + FILE_NAME_OFFSET, tempName, FILE_NAME_MAXIMUM_LENGTH + 1);
-    printTextFromProgMem(MESSAGE_FILE_RENAMED);
+    int8_t tempSuccess = fileSetName(address, tempName);
+    if (tempSuccess) {
+        printTextFromProgMem(MESSAGE_FILE_RENAMED);
+    } else {
+        printTextFromProgMem(errorMessage);
+    }
 }
 
 static int8_t promptDeleteFile(int32_t address) {
@@ -2920,8 +2939,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         tempResult.status = EVALUATION_STATUS_QUIT;
                         return tempResult;
                     }
-                    int16_t tempLength = strlen(tempString2 + STRING_DATA_OFFSET);
-                    writeStorage(tempFile + FILE_NAME_OFFSET, tempString2 + STRING_DATA_OFFSET, tempLength + 1);
+                    int8_t tempSuccess = fileSetName(tempFile, tempString2 + STRING_DATA_OFFSET);
+                    if (!tempSuccess) {
+                        errorCode = tempStartCode;
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                 }
                 if (tempFunction == SYMBOL_FILE_READ) {
                     if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING || (tempArgumentList + 1)->type != VALUE_TYPE_NUMBER
@@ -3180,6 +3203,10 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
                 tempResult.status = EVALUATION_STATUS_QUIT;
                 return tempResult;
+            }
+            if (tempSymbol == '-') {
+                tempResult.value.type = VALUE_TYPE_NUMBER;
+                *(float *)&(tempResult.value.data) = -(*(float *)&(tempResult2.value.data));
             }
             if (tempSymbol == '!') {
                 tempResult.value.type = VALUE_TYPE_NUMBER;
@@ -4037,6 +4064,7 @@ int8_t evaluateNextTestCommand() {
                 testHasFailed = true;
                 testSuiteHasFailed = true;
             }
+            output = KEY_SELECT_OPTION;
         }
     }
     if (strcmp(tempCommand, "EXPECT_ERROR") == 0) {

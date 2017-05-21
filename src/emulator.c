@@ -3226,10 +3226,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempResult.destination = tempResult2.destination;
                 if (tempResult2.destinationType == DESTINATION_TYPE_VALUE) {
                     *(float *)(((value_t *)(tempResult.destination))->data) += 1.0;
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
                     tempResult.value = *(value_t *)(tempResult.destination);
                 }
                 if (tempResult2.destinationType == DESTINATION_TYPE_SYMBOL) {
                     *(uint8_t *)(tempResult.destination) += 1; 
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
                     *(float *)(tempResult.value.data) = *(uint8_t *)(tempResult.destination);
                 }
             }
@@ -3243,10 +3245,12 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempResult.destination = tempResult2.destination;
                 if (tempResult2.destinationType == DESTINATION_TYPE_VALUE) {
                     *(float *)(((value_t *)(tempResult.destination))->data) -= 1.0;
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
                     tempResult.value = *(value_t *)(tempResult.destination);
                 }
                 if (tempResult2.destinationType == DESTINATION_TYPE_SYMBOL) {
                     *(uint8_t *)(tempResult.destination) -= 1; 
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
                     *(float *)(tempResult.value.data) = *(uint8_t *)(tempResult.destination);
                 }
             }

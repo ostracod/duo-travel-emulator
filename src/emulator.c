@@ -3985,6 +3985,70 @@ void loadTestExpression(int8_t *text) {
     appendSymbolToTestProgramFile('\n');
 }
 
+const int8_t *convertTestErrorToErrorMessage(int8_t *name) {
+    if (strcmp(name, "BAD_START_OF_EXPRESSION") == 0) {
+        return ERROR_MESSAGE_BAD_START_OF_EXPRESSION;
+    }
+    if (strcmp(name, "BAD_END_STATEMENT") == 0) {
+        return ERROR_MESSAGE_BAD_END_STATEMENT;
+    }
+    if (strcmp(name, "BAD_CONTINUE_STATEMENT") == 0) {
+        return ERROR_MESSAGE_BAD_CONTINUE_STATEMENT;
+    }
+    if (strcmp(name, "BAD_ARGUMENT_TYPE") == 0) {
+        return ERROR_MESSAGE_BAD_ARGUMENT_TYPE;
+    }
+    if (strcmp(name, "MISSING_APOSTROPHE") == 0) {
+        return ERROR_MESSAGE_MISSING_APOSTROPHE;
+    }
+    if (strcmp(name, "MISSING_QUOTATION_MARK") == 0) {
+        return ERROR_MESSAGE_MISSING_QUOTATION_MARK;
+    }
+    if (strcmp(name, "MISSING_BRACKET") == 0) {
+        return ERROR_MESSAGE_MISSING_BRACKET;
+    }
+    if (strcmp(name, "MISSING_PARENTHESIS") == 0) {
+        return ERROR_MESSAGE_MISSING_PARENTHESIS;
+    }
+    if (strcmp(name, "MISSING_COMMA") == 0) {
+        return ERROR_MESSAGE_MISSING_COMMA;
+    }
+    if (strcmp(name, "STACK_HEAP_COLLISION") == 0) {
+        return ERROR_MESSAGE_STACK_HEAP_COLLISION;
+    }
+    if (strcmp(name, "BAD_INDEX") == 0) {
+        return ERROR_MESSAGE_BAD_INDEX;
+    }
+    if (strcmp(name, "MISSING_FILE") == 0) {
+        return ERROR_MESSAGE_MISSING_FILE;
+    }
+    if (strcmp(name, "NAME_IS_TOO_LONG") == 0) {
+        return ERROR_MESSAGE_NAME_IS_TOO_LONG;
+    }
+    if (strcmp(name, "STORAGE_IS_FULL") == 0) {
+        return ERROR_MESSAGE_STORAGE_IS_FULL;
+    }
+    if (strcmp(name, "BAD_AMOUNT") == 0) {
+        return ERROR_MESSAGE_BAD_AMOUNT;
+    }
+    if (strcmp(name, "FILE_EXISTS") == 0) {
+        return ERROR_MESSAGE_FILE_EXISTS;
+    }
+    if (strcmp(name, "BAD_DESTINATION") == 0) {
+        return ERROR_MESSAGE_BAD_DESTINATION;
+    }
+    if (strcmp(name, "BAD_OPERAND_TYPE") == 0) {
+        return ERROR_MESSAGE_BAD_OPERAND_TYPE;
+    }
+    if (strcmp(name, "DIVIDE_BY_ZERO") == 0) {
+        return ERROR_MESSAGE_DIVIDE_BY_ZERO;
+    }
+    if (strcmp(name, "BAD_VALUE") == 0) {
+        return ERROR_MESSAGE_BAD_VALUE;
+    }
+    return NULL;
+}
+
 int8_t evaluateNextTestCommand() {
     int8_t output = -1;
     int32_t tempLength;
@@ -4060,7 +4124,7 @@ int8_t evaluateNextTestCommand() {
             testSuiteHasFailed = true;
         } else {
             if (strcmp(tempArgument, testOutput) != 0) {
-                printf("Expected: %s\n", tempArgument);
+                printf("Expected output: %s\n", tempArgument);
                 printf("Found: %s\n", testOutput);
                 testHasFailed = true;
                 testSuiteHasFailed = true;
@@ -4069,7 +4133,23 @@ int8_t evaluateNextTestCommand() {
         }
     }
     if (strcmp(tempCommand, "EXPECT_ERROR") == 0) {
-        
+        const int8_t *tempErrorMessage = convertTestErrorToErrorMessage(tempArgument);
+        if (tempErrorMessage == NULL) {
+            printf("Could not find error with name \"%s\".\n", tempArgument);
+            testHasFailed = true;
+            testSuiteHasFailed = true;
+            testIsFinished = true;
+            testSuiteIsFinished = true;
+        } else if (tempErrorMessage != errorMessage) {
+            printf("Expected error: %s\n", tempErrorMessage);
+            if (errorMessage == NULL) {
+                printf("Found: NULL\n");
+            } else {
+                printf("Found: %s\n", errorMessage);
+            }
+            testHasFailed = true;
+            testSuiteHasFailed = true;
+        }
     }
     if (strcmp(tempCommand, "STOP_TEST") == 0) {
         if (testHasFailed) {

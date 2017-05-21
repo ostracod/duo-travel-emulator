@@ -742,6 +742,8 @@ FILE *testSuiteFile;
 int32_t testProgramFile;
 int8_t testHasFailed;
 int8_t testSuiteHasFailed;
+int32_t testCount;
+int32_t testAssertionCount;
 
 int8_t memory[1200];
 int8_t *firstAllocation = NULL;
@@ -4264,6 +4266,7 @@ int8_t evaluateNextTestCommand() {
         printf("----------Running test: %s\n", tempArgument);
         testHasFailed = false;
         testIsFinished = false;
+        testCount += 1;
         int32_t index = 0;
         while (index < STORAGE_SIZE) {
             testStorage[index] = 0xFF;
@@ -4295,6 +4298,7 @@ int8_t evaluateNextTestCommand() {
             }
             output = KEY_SELECT_OPTION;
         }
+        testAssertionCount += 1;
     }
     if (strcmp(tempCommand, "EXPECT_ERROR") == 0) {
         const int8_t *tempErrorMessage = convertTestErrorToErrorMessage(tempArgument);
@@ -4314,6 +4318,7 @@ int8_t evaluateNextTestCommand() {
             testHasFailed = true;
             testSuiteHasFailed = true;
         }
+        testAssertionCount += 1;
     }
     if (strcmp(tempCommand, "STOP_TEST") == 0) {
         if (testHasFailed) {
@@ -4339,6 +4344,8 @@ int8_t getTestKey() {
 
 void runTestSuite() {
     isTesting = true;
+    testCount = 0;
+    testAssertionCount = 0;
     testSuiteFile = fopen(testSuiteFilePath, "r");
     while (!testSuiteIsFinished) {
         evaluateNextTestCommand();
@@ -4351,6 +4358,8 @@ void runTestSuite() {
     } else {
         printf("> > > PASS < < <\n");
     }
+    printf("Test count: %d\n", testCount);
+    printf("Assertion count: %d\n", testAssertionCount);
 }
 
 int main(int argc, const char *argv[]) {

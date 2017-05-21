@@ -689,6 +689,7 @@ const int8_t ERROR_MESSAGE_BAD_OPERAND_TYPE[] PROGMEM = "ERROR: Bad\noperand typ
 const int8_t ERROR_MESSAGE_DIVIDE_BY_ZERO[] PROGMEM = "ERROR: Divide\nby zero.";
 const int8_t ERROR_MESSAGE_BAD_VALUE[] PROGMEM = "ERROR: Bad\nvalue.";
 const int8_t ERROR_MESSAGE_NOT_TOP_LEVEL[] PROGMEM = "ERROR: Not\ntop level.";
+const int8_t ERROR_MESSAGE_MISSING_VALUE[] PROGMEM = "ERROR: Missing\nvalue.";
 
 typedef struct value {
     int8_t type;
@@ -2380,6 +2381,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     return tempResult;
                 }
                 code = tempResult2.nextCode;
+                if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
                     reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
                     tempResult.status = EVALUATION_STATUS_QUIT;
@@ -2523,6 +2529,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     tempResult.status = tempResult2.status;
                     return tempResult;
                 }
+                if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 code = tempResult2.nextCode;
                 int8_t tempSuccess = insertListValue(tempList, index, &(tempResult2.value));
                 if (!tempSuccess) {
@@ -2571,6 +2582,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 firstTreasureTracker = &tempTreasureTracker2;
                 if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                     tempResult.status = tempResult2.status;
+                    return tempResult;
+                }
+                if (tempResult2.value.type == VALUE_TYPE_MISSING && tempFunction != SYMBOL_FUNCTION) {
+                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
                     return tempResult;
                 }
                 tempArgumentList[index] = tempResult2.value;
@@ -3228,6 +3244,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 tempResult.status = tempResult2.status;
                 return tempResult;
             }
+            if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+                reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                tempResult.status = EVALUATION_STATUS_QUIT;
+                return tempResult;
+            }
             code = tempResult2.nextCode;
             if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
                 reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
@@ -3329,12 +3350,22 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 }
             } else if (tempSymbol == '[') {
                 code += 1;
+                if (tempResult.value.type == VALUE_TYPE_MISSING) {
+                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
                 firstTreasureTracker = &tempTreasureTracker;
                 treasureTracker_t tempTreasureTracker2;
                 initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
                 if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                     tempResult.status = tempResult2.status;
+                    return tempResult;
+                }
+                if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
                     return tempResult;
                 }
                 code = tempResult2.nextCode;
@@ -3385,6 +3416,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 }
             } else if (tempSymbol == ':' || tempSymbol == ';') {
                 code += 1;
+                if (tempResult.value.type == VALUE_TYPE_MISSING) {
+                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 if (tempResult.value.type != VALUE_TYPE_FUNCTION) {
                     reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
                     tempResult.status = EVALUATION_STATUS_QUIT;
@@ -3404,6 +3440,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         firstTreasureTracker = &tempTreasureTracker2;
                         if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                             tempResult.status = tempResult2.status;
+                            return tempResult;
+                        }
+                        if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+                            reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                            tempResult.status = EVALUATION_STATUS_QUIT;
                             return tempResult;
                         }
                         tempArgumentList[index] = tempResult2.value;
@@ -3490,6 +3531,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
                     if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
                         tempResult.status = tempResult2.status;
+                        return tempResult;
+                    }
+                    if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+                        reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
                         return tempResult;
                     }
                     code = tempResult2.nextCode;
@@ -3604,6 +3650,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             }
                         }
                     } else {
+                        if (tempSymbol != '=') {
+                            if (tempResult.value.type == VALUE_TYPE_MISSING) {
+                                reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
+                                tempResult.status = EVALUATION_STATUS_QUIT;
+                                return tempResult;
+                            }
+                        }
                         if (tempSymbol == '+') {
                             if (tempResult.value.type == VALUE_TYPE_NUMBER) {
                                 if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
@@ -4107,6 +4160,9 @@ const int8_t *convertTestErrorToErrorMessage(int8_t *name) {
     }
     if (strcmp(name, "NOT_TOP_LEVEL") == 0) {
         return ERROR_MESSAGE_NOT_TOP_LEVEL;
+    }
+    if (strcmp(name, "MISSING_VALUE") == 0) {
+        return ERROR_MESSAGE_MISSING_VALUE;
     }
     return NULL;
 }

@@ -687,6 +687,7 @@ const int8_t ERROR_MESSAGE_BAD_DESTINATION[] PROGMEM = "ERROR: Bad\ndestination.
 const int8_t ERROR_MESSAGE_BAD_OPERAND_TYPE[] PROGMEM = "ERROR: Bad\noperand type.";
 const int8_t ERROR_MESSAGE_DIVIDE_BY_ZERO[] PROGMEM = "ERROR: Divide\nby zero.";
 const int8_t ERROR_MESSAGE_BAD_VALUE[] PROGMEM = "ERROR: Bad\nvalue.";
+const int8_t ERROR_MESSAGE_NOT_TOP_LEVEL[] PROGMEM = "ERROR: Not\ntop level.";
 
 typedef struct value {
     int8_t type;
@@ -2580,6 +2581,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             int8_t tempShouldDisplayRunning = false;
             // Control functions.
             if (tempFunction >= SYMBOL_IF && tempFunction <= SYMBOL_QUIT) {
+                if (!isTopLevel) {
+                    reportError(ERROR_MESSAGE_NOT_TOP_LEVEL, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 if (tempFunction == SYMBOL_RETURN) {
                     tempResult.status = EVALUATION_STATUS_RETURN;
                 }
@@ -4077,6 +4083,9 @@ const int8_t *convertTestErrorToErrorMessage(int8_t *name) {
     }
     if (strcmp(name, "BAD_VALUE") == 0) {
         return ERROR_MESSAGE_BAD_VALUE;
+    }
+    if (strcmp(name, "NOT_TOP_LEVEL") == 0) {
+        return ERROR_MESSAGE_NOT_TOP_LEVEL;
     }
     return NULL;
 }

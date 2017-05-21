@@ -2423,8 +2423,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     tempSymbol = '\n';
                 }
             }
-            tempSymbol = readStorageInt8(code);
-            if (tempSymbol != '\'') {
+            int8_t tempSymbol2 = readStorageInt8(code);
+            if (tempSymbol2 != '\'') {
                 reportError(ERROR_MESSAGE_MISSING_APOSTROPHE, tempStartCode);
                 tempResult.status = EVALUATION_STATUS_QUIT;
                 return tempResult;
@@ -4034,6 +4034,7 @@ int8_t evaluateNextTestCommand() {
     }
     if (strcmp(tempCommand, "START_TEST") == 0) {
         printf("----------Running test: %s\n", tempArgument);
+        testHasFailed = false;
         testIsFinished = false;
         int32_t index = 0;
         while (index < STORAGE_SIZE) {

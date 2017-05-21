@@ -2550,7 +2550,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             code += 1;
             int8_t tempArgumentAmount = pgm_read_byte(FUNCTION_ARGUMENT_AMOUNT_LIST + (tempSymbol - FIRST_FUNCTION_SYMBOL));
             if (tempArgumentAmount < 0) {
-                tempArgumentAmount = getCustomFunctionArgumentAmount(tempStartCode);
+                tempArgumentAmount = getCustomFunctionArgumentAmount(tempStartCode) + 1;
             }
             value_t tempArgumentList[tempArgumentAmount];
             int32_t tempExpressionList[tempArgumentAmount];
@@ -2675,9 +2675,13 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     int32_t tempAddress = tempBranch->address;
                     int8_t tempSuccess = popBranch();
                     if (!tempSuccess) {
-                        reportError(ERROR_MESSAGE_BAD_END_STATEMENT, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
+                        if (localScope != globalScope) {
+                            tempResult.status = EVALUATION_STATUS_RETURN;
+                        } else {
+                            reportError(ERROR_MESSAGE_BAD_END_STATEMENT, tempStartCode);
+                            tempResult.status = EVALUATION_STATUS_QUIT;
+                            return tempResult;
+                        }
                     }
                     if (tempAction == BRANCH_ACTION_LOOP) {
                         code = tempAddress;

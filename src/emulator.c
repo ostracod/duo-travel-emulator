@@ -1924,8 +1924,14 @@ static int32_t readStorageVariableName(uint8_t *destination, int32_t address) {
     int8_t index = 0;
     while (index < VARIABLE_NAME_MAXIMUM_LENGTH) {
         uint8_t tempSymbol = readStorageInt8(address);
-        if (!((tempSymbol >= 'A' && tempSymbol <= 'Z') || (tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '_')) {
-            break;
+        if (index == 0) {
+            if (!((tempSymbol >= 'A' && tempSymbol <= 'Z') || tempSymbol == '_')) {
+                break;
+            }
+        } else {
+            if (!((tempSymbol >= 'A' && tempSymbol <= 'Z') || (tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '_')) {
+                break;
+            }
         }
         destination[index] = tempSymbol;
         address += 1;

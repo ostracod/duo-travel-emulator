@@ -86,6 +86,7 @@
 #define SCOPE_BRANCH_OFFSET (SCOPE_VARIABLE_OFFSET + sizeof(int8_t *))
 #define SCOPE_DATA_OFFSET (SCOPE_BRANCH_OFFSET + sizeof(int8_t *))
 
+#define NUMBER_LITERAL_MAXIMUM_LENGTH 20
 #define VARIABLE_NAME_MAXIMUM_LENGTH 15
 
 #define VARIABLE_NEXT_OFFSET 0
@@ -690,6 +691,8 @@ const int8_t ERROR_MESSAGE_DIVIDE_BY_ZERO[] PROGMEM = "ERROR: Divide\nby zero.";
 const int8_t ERROR_MESSAGE_BAD_VALUE[] PROGMEM = "ERROR: Bad\nvalue.";
 const int8_t ERROR_MESSAGE_NOT_TOP_LEVEL[] PROGMEM = "ERROR: Not\ntop level.";
 const int8_t ERROR_MESSAGE_MISSING_VALUE[] PROGMEM = "ERROR: Missing\nvalue.";
+const int8_t ERROR_MESSAGE_NUMBER_LITERAL_TOO_LONG[] PROGMEM = "ERROR: Number\nliteral too\nlong.";
+const int8_t ERROR_MESSAGE_VARIABLE_NAME_TOO_LONG[] PROGMEM = "ERROR: Variable\nname too long.";
 
 typedef struct value {
     int8_t type;
@@ -1307,7 +1310,7 @@ static void displayStringAllocation(int8_t posX, int8_t posY, int8_t *string) {
 
 static int8_t displayValue(int8_t posX, int8_t posY, value_t *value) {
     if (value->type == VALUE_TYPE_NUMBER) {
-        int8_t tempBuffer[20];
+        int8_t tempBuffer[NUMBER_LITERAL_MAXIMUM_LENGTH + 1];
         convertFloatToText(tempBuffer, *(float *)&(value->data));
         displayText(posX, posY, tempBuffer);
         return true;
@@ -1416,7 +1419,7 @@ static int8_t printStringAllocation(int8_t *string) {
 
 static int8_t printValue(value_t *value) {
     if (value->type == VALUE_TYPE_NUMBER) {
-        int8_t tempBuffer[20];
+        int8_t tempBuffer[NUMBER_LITERAL_MAXIMUM_LENGTH + 1];
         convertFloatToText(tempBuffer, *(float *)&(value->data));
         int8_t tempResult = printText(tempBuffer);
         return tempResult;
@@ -1946,7 +1949,11 @@ static int8_t isUnaryOperator(uint8_t symbol) {
 
 static int32_t readStorageVariableName(uint8_t *destination, int32_t address) {
     int8_t index = 0;
-    while (index < VARIABLE_NAME_MAXIMUM_LENGTH) {
+    while (true) {
+        if (index >= VARIABLE_NAME_MAXIMUM_LENGTH) {
+            errorMessage = ERROR_MESSAGE_VARIABLE_NAME_TOO_LONG;
+            return -1;
+        }
         uint8_t tempSymbol = readStorageInt8(address);
         if (index == 0) {
             if (!((tempSymbol >= 'A' && tempSymbol <= 'Z') || tempSymbol == '_')) {
@@ -1962,6 +1969,7 @@ static int32_t readStorageVariableName(uint8_t *destination, int32_t address) {
         index += 1;
     }
     if (index == 0) {
+        errorMessage = ERROR_MESSAGE_BAD_DESTINATION;
         return -1;
     }
     destination[index] = 0;
@@ -2435,12 +2443,17 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         code = skipStorageLine(code);
     } else {
         if ((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.') {
-            uint8_t tempBuffer[20];
+            uint8_t tempBuffer[NUMBER_LITERAL_MAXIMUM_LENGTH + 1];
             tempBuffer[0] = tempSymbol;
             code += 1;
             uint8_t tempLastSymbol = 0;
             int8_t index = 1;
             while (true) {
+                if (index >= NUMBER_LITERAL_MAXIMUM_LENGTH) {
+                    reportError(ERROR_MESSAGE_NUMBER_LITERAL_TOO_LONG, tempStartCode);
+                    tempResult.status = EVALUATION_STATUS_QUIT;
+                    return tempResult;
+                }
                 tempSymbol = readStorageInt8(code);
                 if (!((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.' || tempSymbol == 'e'
                         || (tempSymbol == '-' && tempLastSymbol == 'e'))) {
@@ -2457,6 +2470,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         } else if ((tempSymbol >= 'A' && tempSymbol <= 'Z') || tempSymbol == '_') {
             uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
             code = readStorageVariableName(tempBuffer, code);
+            if (code < 0) {
+                errorCode = tempStartCode;
+                tempResult.status = EVALUATION_STATUS_QUIT;
+                return tempResult;
+            }
             tempResult.destinationType = DESTINATION_TYPE_VALUE;
             tempResult.destination = (int8_t *)findVariableValueByName(tempBuffer);
             if (tempResult.destination != NULL) {
@@ -2743,7 +2761,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
                     int32_t tempCode = readStorageVariableName(tempBuffer, tempExpressionList[0]);
                     if (tempCode < 0) {
-                        reportError(ERROR_MESSAGE_BAD_DESTINATION, tempStartCode);
+                        errorCode = tempStartCode;
                         tempResult.status = EVALUATION_STATUS_QUIT;
                         return tempResult;
                     }
@@ -3109,7 +3127,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 if (tempFunction == SYMBOL_STRING) {
                     int8_t tempType = (tempArgumentList + 0)->type;
                     if (tempType == VALUE_TYPE_NUMBER) {
-                        uint8_t tempBuffer[20];
+                        uint8_t tempBuffer[NUMBER_LITERAL_MAXIMUM_LENGTH + 1];
                         convertFloatToText(tempBuffer, *(float *)((tempArgumentList + 0)->data));
                         tempResult.value.type = VALUE_TYPE_STRING;
                         int8_t *tempString = createString(tempBuffer);
@@ -3771,7 +3789,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                                 uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
                                 int32_t tempCode = readStorageVariableName(tempBuffer, tempStartCode);
                                 if (tempCode < 0) {
-                                    reportError(ERROR_MESSAGE_BAD_DESTINATION, tempStartCode);
+                                    errorCode = tempStartCode;
                                     tempResult.status = EVALUATION_STATUS_QUIT;
                                     return tempResult;
                                 }
@@ -4191,6 +4209,12 @@ const int8_t *convertTestErrorToErrorMessage(int8_t *name) {
     }
     if (strcmp(name, "MISSING_VALUE") == 0) {
         return ERROR_MESSAGE_MISSING_VALUE;
+    }
+    if (strcmp(name, "NUMBER_LITERAL_TOO_LONG") == 0) {
+        return ERROR_MESSAGE_NUMBER_LITERAL_TOO_LONG;
+    }
+    if (strcmp(name, "VARIABLE_NAME_TOO_LONG") == 0) {
+        return ERROR_MESSAGE_VARIABLE_NAME_TOO_LONG;
     }
     return NULL;
 }

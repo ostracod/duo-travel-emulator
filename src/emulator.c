@@ -169,6 +169,7 @@ const int8_t SYMBOL_TEXT_REMOVE[] PROGMEM = "rem:";
 const int8_t SYMBOL_TEXT_SUBSEQUENCE[] PROGMEM = "sub:";
 const int8_t SYMBOL_TEXT_INSERT_SUBSEQUENCE[] PROGMEM = "insSub:";
 const int8_t SYMBOL_TEXT_REMOVE_SUBSEQUENCE[] PROGMEM = "remSub:";
+const int8_t SYMBOL_TEXT_EQUAL_REFERENCE[] PROGMEM = "equRef:";
 
 const int8_t SYMBOL_TEXT_PRINT[] PROGMEM = "print:";
 const int8_t SYMBOL_TEXT_REQUEST_STRING[] PROGMEM = "reqStr;";
@@ -241,6 +242,7 @@ const int8_t * const SYMBOL_TEXT_LIST[] PROGMEM = {
     SYMBOL_TEXT_SUBSEQUENCE,
     SYMBOL_TEXT_INSERT_SUBSEQUENCE,
     SYMBOL_TEXT_REMOVE_SUBSEQUENCE,
+    SYMBOL_TEXT_EQUAL_REFERENCE,
     SYMBOL_TEXT_PRINT,
     SYMBOL_TEXT_REQUEST_STRING,
     SYMBOL_TEXT_REQUEST_NUMBER,
@@ -312,18 +314,19 @@ const int8_t * const SYMBOL_TEXT_LIST[] PROGMEM = {
 #define SYMBOL_SUBSEQUENCE 182
 #define SYMBOL_INSERT_SUBSEQUENCE 183
 #define SYMBOL_REMOVE_SUBSEQUENCE 184
-#define SYMBOL_PRINT 185
-#define SYMBOL_REQUEST_STRING 186
-#define SYMBOL_REQUEST_NUMBER 187
-#define SYMBOL_MENU 188
-#define SYMBOL_FILE_EXISTS 189
-#define SYMBOL_FILE_SIZE 190
-#define SYMBOL_FILE_CREATE 191
-#define SYMBOL_FILE_DELETE 192
-#define SYMBOL_FILE_SET_NAME 193
-#define SYMBOL_FILE_READ 194
-#define SYMBOL_FILE_WRITE 195
-#define SYMBOL_FILE_IMPORT 196
+#define SYMBOL_EQUAL_REFERENCE 185
+#define SYMBOL_PRINT 186
+#define SYMBOL_REQUEST_STRING 187
+#define SYMBOL_REQUEST_NUMBER 188
+#define SYMBOL_MENU 189
+#define SYMBOL_FILE_EXISTS 190
+#define SYMBOL_FILE_SIZE 191
+#define SYMBOL_FILE_CREATE 192
+#define SYMBOL_FILE_DELETE 193
+#define SYMBOL_FILE_SET_NAME 194
+#define SYMBOL_FILE_READ 195
+#define SYMBOL_FILE_WRITE 196
+#define SYMBOL_FILE_IMPORT 197
 
 const int8_t UNARY_OPERATOR_LIST[] = {
     '-',
@@ -444,6 +447,7 @@ const int8_t FUNCTION_ARGUMENT_AMOUNT_LIST[] = {
     3, // SYMBOL_SUBSEQUENCE
     3, // SYMBOL_INSERT_SUBSEQUENCE
     3, // SYMBOL_REMOVE_SUBSEQUENCE
+    2, // SYMBOL_EQUAL_REFERENCE
     1, // SYMBOL_PRINT
     0, // SYMBOL_REQUEST_STRING
     0, // SYMBOL_REQUEST_NUMBER
@@ -575,7 +579,8 @@ const uint8_t SYMBOL_SET_VALUE[] PROGMEM = {
     SYMBOL_REMOVE_SUBSEQUENCE,
     SYMBOL_NUMBER,
     SYMBOL_STRING,
-    SYMBOL_TYPE
+    SYMBOL_TYPE,
+    SYMBOL_EQUAL_REFERENCE
 };
 
 const int8_t * const SYMBOL_SET_LIST[] PROGMEM = {
@@ -3108,7 +3113,7 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     }
                 }
             }
-            if (tempFunction >= SYMBOL_NUMBER && tempFunction <= SYMBOL_REMOVE_SUBSEQUENCE) {
+            if (tempFunction >= SYMBOL_NUMBER && tempFunction <= SYMBOL_EQUAL_REFERENCE) {
                 if (tempFunction == SYMBOL_NUMBER) {
                     int8_t tempType = (tempArgumentList + 0)->type;
                     if (tempType == VALUE_TYPE_NUMBER) {
@@ -3274,6 +3279,17 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                         tempResult.status = EVALUATION_STATUS_QUIT;
                         return tempResult;
                     }
+                }
+                if (tempFunction == SYMBOL_EQUAL_REFERENCE) {
+                    int8_t tempType1 = (tempArgumentList + 0)->type;
+                    int8_t tempType2 = (tempArgumentList + 1)->type;
+                    if ((tempType1 != VALUE_TYPE_STRING && tempType1 != VALUE_TYPE_LIST) || tempType1 != tempType2) {
+                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
+                    tempResult.value.type = VALUE_TYPE_NUMBER;
+                    *(float *)(tempResult.value.data) = (*(int8_t **)(tempArgumentList + 0)->data == *(int8_t **)((tempArgumentList + 1)->data));
                 }
             }
             if (tempShouldDisplayRunning) {

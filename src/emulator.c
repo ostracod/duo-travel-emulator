@@ -465,7 +465,7 @@ const uint8_t SYMBOL_SET_LETTERS[] PROGMEM = {
 
 const uint8_t SYMBOL_SET_NUMBERS[] PROGMEM = {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-    '.', '-'
+    '.', '-', 'e'
 };
 
 const uint8_t SYMBOL_SET_PUNCTUATION[] PROGMEM = {
@@ -779,42 +779,6 @@ const void *pgm_read_ptr(const void **pointer) {
     return *pointer;
 }
 
-void convertFloatToText(int8_t *destination, float number) {
-    sprintf(destination, "%f", number);
-    int8_t tempHasDecimalPoint = false;
-    int8_t index = 0;
-    while (true) {
-        int8_t tempCharacter = destination[index];
-        if (tempCharacter == '.') {
-            tempHasDecimalPoint = true;
-        } else if (!((tempCharacter >= '0' && tempCharacter <= '9') || tempCharacter == '-')) {
-            break;
-        }
-        index += 1;
-    }
-    if (!tempHasDecimalPoint) {
-        return;
-    }
-    int8_t tempStartIndex = index;
-    while (index > 0) {
-        int8_t tempCharacter = destination[index - 1];
-        if (tempCharacter >= '1' && tempCharacter <= '9') {
-            break;
-        }
-        index -= 1;
-        if (tempCharacter == '.') {
-            break;
-        }
-    }
-    if (index != tempStartIndex) {
-        strcpy(destination + index, destination + tempStartIndex);
-    }
-}
-
-float convertTextToFloat(int8_t *text) {
-    return atof(text);
-}
-
 void displayCharacter(int8_t posX, int8_t posY, int8_t character) {
     if (isTesting) {
         return;
@@ -991,6 +955,61 @@ void scrambleMemory() {
         mvprintw(0, 0, "%d", garbage[index]);
         index += 1;
     }
+}
+
+static void convertFloatToText(int8_t *destination, float number) {
+    float tempNumber;
+    if (number < 0.0) {
+        tempNumber = -number;
+    } else {
+        tempNumber = number;
+    }
+    if ((tempNumber > 10000000.0 || tempNumber < 0.001) && tempNumber != 0.0) {
+        int8_t tempExponent = 0;
+        while (tempNumber >= 10.0) {
+            tempNumber /= 10.0;
+            tempExponent += 1;
+        }
+        while (tempNumber < 1.0) {
+            tempNumber *= 10.0;
+            tempExponent -= 1;
+        }
+        if (number < 0.0) {
+            tempNumber = -tempNumber;
+        }
+        sprintf(destination, "%.4fe%d", tempNumber, tempExponent);
+    } else {
+        sprintf(destination, "%.4f", number);
+        int8_t tempHasDecimalPoint = false;
+        int8_t index = 0;
+        while (true) {
+            int8_t tempCharacter = destination[index];
+            if (tempCharacter == '.') {
+                tempHasDecimalPoint = true;
+            } else if (!((tempCharacter >= '0' && tempCharacter <= '9') || tempCharacter == '-')) {
+                break;
+            }
+            index += 1;
+        }
+        if (!tempHasDecimalPoint) {
+            return;
+        }
+        while (index > 0) {
+            int8_t tempCharacter = destination[index - 1];
+            if (tempCharacter >= '1' && tempCharacter <= '9') {
+                break;
+            }
+            index -= 1;
+            if (tempCharacter == '.') {
+                break;
+            }
+        }
+        destination[index] = 0;
+    }
+}
+
+static float convertTextToFloat(int8_t *text) {
+    return atof(text);
 }
 
 static int16_t getProgMemTextLength(const int8_t *text) {
@@ -2419,14 +2438,17 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             uint8_t tempBuffer[20];
             tempBuffer[0] = tempSymbol;
             code += 1;
+            uint8_t tempLastSymbol = 0;
             int8_t index = 1;
             while (true) {
                 tempSymbol = readStorageInt8(code);
-                if (!((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.')) {
+                if (!((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.' || tempSymbol == 'e'
+                        || (tempSymbol == '-' && tempLastSymbol == 'e'))) {
                     tempBuffer[index] = 0;
                     break;
                 }
                 tempBuffer[index] = tempSymbol;
+                tempLastSymbol = tempSymbol;
                 code += 1;
                 index += 1;
             }

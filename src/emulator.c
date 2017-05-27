@@ -374,7 +374,7 @@ const int8_t BINARY_OPERATOR_LIST[] PROGMEM = {
 
 // All unary operators have a precedence of 0.
 
-const int8_t BINARY_OPERATOR_PRECEDENCE_LIST[] = {
+const int8_t BINARY_OPERATOR_PRECEDENCE_LIST[] PROGMEM = {
     1, // '*'
     1, // '/'
     1, // '%'
@@ -413,7 +413,7 @@ const int8_t BINARY_OPERATOR_PRECEDENCE_LIST[] = {
 #define FIRST_FUNCTION_SYMBOL SYMBOL_IF
 #define LAST_FUNCTION_SYMBOL SYMBOL_FILE_IMPORT
 
-const int8_t FUNCTION_ARGUMENT_AMOUNT_LIST[] = {
+const int8_t FUNCTION_ARGUMENT_AMOUNT_LIST[] PROGMEM = {
     1, // SYMBOL_IF
     1, // SYMBOL_ELSE_IF
     0, // SYMBOL_ELSE

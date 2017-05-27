@@ -1453,13 +1453,13 @@ static int8_t menu(int8_t *title, int8_t *optionList) {
     while (true) {
         int8_t tempKey = getKey();
         int16_t tempNextIndex = index;
-        if (tempKey == KEY_CURSOR_UP) {
+        if (tempKey == KEY_CURSOR_UP || tempKey == KEY_CURSOR_LEFT) {
             tempNextIndex -= 1;
             if (tempNextIndex < 0) {
                 tempNextIndex = tempLength - 1;
             }
         }
-        if (tempKey == KEY_CURSOR_DOWN) {
+        if (tempKey == KEY_CURSOR_DOWN || tempKey == KEY_CURSOR_RIGHT) {
             tempNextIndex += 1;
             if (tempNextIndex >= tempLength) {
                 tempNextIndex = 0;

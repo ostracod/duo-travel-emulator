@@ -328,7 +328,7 @@ const int8_t * const SYMBOL_TEXT_LIST[] PROGMEM = {
 #define SYMBOL_FILE_WRITE 196
 #define SYMBOL_FILE_IMPORT 197
 
-const int8_t UNARY_OPERATOR_LIST[] = {
+const int8_t UNARY_OPERATOR_LIST[] PROGMEM = {
     '-',
     SYMBOL_INCREMENT,
     SYMBOL_DECREMENT,
@@ -336,7 +336,7 @@ const int8_t UNARY_OPERATOR_LIST[] = {
     '~'
 };
 
-const int8_t BINARY_OPERATOR_LIST[] = {
+const int8_t BINARY_OPERATOR_LIST[] PROGMEM = {
     '*',
     '/',
     '%',

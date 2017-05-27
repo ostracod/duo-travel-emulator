@@ -2206,7 +2206,7 @@ static int8_t insertValueIntoSequence(value_t *sequence, int16_t index, value_t 
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
             return false;
         }
-        memcpy(tempString + STRING_DATA_OFFSET + index + 1, tempString + STRING_DATA_OFFSET + index, tempLength - index + 1);
+        memmove(tempString + STRING_DATA_OFFSET + index + 1, tempString + STRING_DATA_OFFSET + index, tempLength - index + 1);
         *(tempString + STRING_DATA_OFFSET + index) = tempSymbol;
         return true;
     } else if (sequence->type == VALUE_TYPE_LIST) {
@@ -2227,7 +2227,7 @@ static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startInde
             errorMessage = ERROR_MESSAGE_BAD_INDEX;
             return false;
         }
-        memcpy(tempString + STRING_DATA_OFFSET + startIndex, tempString + STRING_DATA_OFFSET + endIndex, tempLength1 - endIndex + 1);
+        memmove(tempString + STRING_DATA_OFFSET + startIndex, tempString + STRING_DATA_OFFSET + endIndex, tempLength1 - endIndex + 1);
         tempString = resizeString(tempPointer, tempLength1 - tempLength2);
         if (tempString == NULL) {
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
@@ -2243,7 +2243,7 @@ static int8_t removeSubsequenceFromSequence(value_t *sequence, int16_t startInde
             errorMessage = ERROR_MESSAGE_BAD_INDEX;
             return false;
         }
-        memcpy(tempList + LIST_DATA_OFFSET + startIndex * sizeof(value_t), tempList + LIST_DATA_OFFSET + endIndex * sizeof(value_t), (tempLength1 - endIndex) * sizeof(value_t));
+        memmove(tempList + LIST_DATA_OFFSET + startIndex * sizeof(value_t), tempList + LIST_DATA_OFFSET + endIndex * sizeof(value_t), (tempLength1 - endIndex) * sizeof(value_t));
         tempList = resizeList(tempPointer, tempLength1 - tempLength2);
         if (tempList == NULL) {
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
@@ -2327,7 +2327,7 @@ static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, va
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
             return false;
         }
-        memcpy(tempString1 + STRING_DATA_OFFSET + index + tempLength2, tempString1 + STRING_DATA_OFFSET + index, tempLength1 - index + 1);
+        memmove(tempString1 + STRING_DATA_OFFSET + index + tempLength2, tempString1 + STRING_DATA_OFFSET + index, tempLength1 - index + 1);
         memcpy(tempString1 + STRING_DATA_OFFSET + index, tempString2 + STRING_DATA_OFFSET, tempLength2);
         return true;
     } else if (sequence->type == VALUE_TYPE_LIST) {
@@ -2350,7 +2350,7 @@ static int8_t insertSubsequenceIntoSequence(value_t *sequence, int16_t index, va
             errorMessage = ERROR_MESSAGE_STACK_HEAP_COLLISION;
             return false;
         }
-        memcpy(tempList1 + LIST_DATA_OFFSET + (index + tempLength2) * sizeof(value_t), tempList1 + LIST_DATA_OFFSET + index * sizeof(value_t), (tempLength1 - index) * sizeof(value_t));
+        memmove(tempList1 + LIST_DATA_OFFSET + (index + tempLength2) * sizeof(value_t), tempList1 + LIST_DATA_OFFSET + index * sizeof(value_t), (tempLength1 - index) * sizeof(value_t));
         memcpy(tempList1 + LIST_DATA_OFFSET + index * sizeof(value_t), tempList2 + LIST_DATA_OFFSET, tempLength2 * sizeof(value_t));
         return true;
     } else {

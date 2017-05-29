@@ -1743,7 +1743,7 @@ static int8_t runTextEditor() {
         }
         if (tempKey == KEY_DELETE) {
             if (textEditorIndex > 0) {
-                int8_t index = textEditorIndex;
+                int16_t index = textEditorIndex;
                 while (true) {
                     int8_t tempSymbol = textEditorText[index];
                     textEditorText[index - 1] = tempSymbol;

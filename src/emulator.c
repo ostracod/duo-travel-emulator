@@ -672,6 +672,7 @@ const int8_t MESSAGE_FILE_DELETED[] PROGMEM = "Deleted file.";
 const int8_t MESSAGE_SAVING[] PROGMEM = "Saving...";
 const int8_t MESSAGE_FILE_SAVED[] PROGMEM = "Saved file.";
 const int8_t MESSAGE_RUNNING[] PROGMEM = "Running...";
+const int8_t MESSAGE_WELCOME[] PROGMEM = "DUO Travel OS\nVersion 1.0";
 
 const int8_t ERROR_MESSAGE_BAD_START_OF_EXPRESSION[] PROGMEM = "ERROR: Bad\nstart of\nexpression.";
 const int8_t ERROR_MESSAGE_BAD_END_STATEMENT[] PROGMEM = "ERROR: Bad\nend statement.";
@@ -4467,6 +4468,10 @@ int main(int argc, const char *argv[]) {
     init_pair(BLACK_ON_WHITE, COLOR_BLACK, COLOR_WHITE);
     init_pair(WHITE_ON_CYAN, COLOR_WHITE, COLOR_CYAN);
     handleResize();
+    
+    displayTextFromProgMem(0, 0, MESSAGE_WELCOME);
+    // Seed would be generated here.
+    getKey();
     
     mainMenu();
     

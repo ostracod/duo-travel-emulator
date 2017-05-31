@@ -2387,6 +2387,22 @@ static void reportError(const int8_t *message, int32_t code) {
 
 static expressionResult_t runCode(int32_t address);
 
+static void debugPrint(int16_t value) {
+    clearDisplay();
+    if (value < 0) {
+        value = -value;
+    }
+    int8_t index = 0;
+    int16_t tempValue = 10000;
+    while (tempValue >= 1) {
+        displayCharacter(index, 0, '0' + value / tempValue);
+        value %= tempValue;
+        index += 1;
+        tempValue /= 10;
+    }
+    getKey();
+}
+
 static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
     branch_t *tempBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
     //mvprintw(0, 0, "%d %d      ", code, tempBranch->action);
@@ -2394,6 +2410,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
     int32_t tempStartCode = code;
     uint8_t tempSymbol = readStorageInt8(code);
     expressionResult_t tempResult;
+    //debugPrint(tempSymbol);
+    //debugPrint((int16_t)&tempResult);
     tempResult.status = EVALUATION_STATUS_NORMAL;
     tempResult.destination = NULL;
     tempResult.value.type = VALUE_TYPE_MISSING;
@@ -2449,7 +2467,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
         code = skipStorageLine(code);
     } else {
         if ((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.') {
-            uint8_t tempBuffer[NUMBER_LITERAL_MAXIMUM_LENGTH + 1];
+            volatile int16_t tempCheatSize = NUMBER_LITERAL_MAXIMUM_LENGTH + 1;
+            uint8_t tempBuffer[tempCheatSize];
             tempBuffer[0] = tempSymbol;
             code += 1;
             uint8_t tempLastSymbol = 0;
@@ -2472,9 +2491,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 index += 1;
             }
             tempResult.value.type = VALUE_TYPE_NUMBER;
-            *(float *)&(tempResult.value.data) = convertTextToFloat(tempBuffer);
+            float tempNumber = convertTextToFloat(tempBuffer);
+            *(float *)(tempResult.value.data) = tempNumber;
         } else if ((tempSymbol >= 'A' && tempSymbol <= 'Z') || tempSymbol == '_') {
-            uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+            volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
+            uint8_t tempBuffer[tempCheatSize];
             code = readStorageVariableName(tempBuffer, code);
             if (code < 0) {
                 errorCode = tempStartCode;
@@ -2764,7 +2785,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     }
                 }
                 if (tempFunction == SYMBOL_FUNCTION) {
-                    uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+                    volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
+                    uint8_t tempBuffer[tempCheatSize];
                     int32_t tempCode = readStorageVariableName(tempBuffer, tempExpressionList[0]);
                     if (tempCode < 0) {
                         errorCode = tempStartCode;
@@ -2905,7 +2927,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     }
                 }
                 if (tempFunction == SYMBOL_REQUEST_STRING) {
-                    uint8_t tempText[REQUEST_STRING_MAXIMUM_LENGTH + 1];
+                    volatile int16_t tempCheatSize = REQUEST_STRING_MAXIMUM_LENGTH + 1;
+                    uint8_t tempText[tempCheatSize];
                     tempText[0] = 0;
                     initializeTextEditor(tempText, REQUEST_STRING_MAXIMUM_LENGTH, false);
                     int8_t tempResult2 = runTextEditor();
@@ -2924,7 +2947,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     }
                 }
                 if (tempFunction == SYMBOL_REQUEST_NUMBER) {
-                    uint8_t tempText[REQUEST_NUMBER_MAXIMUM_LENGTH + 1];
+                    volatile int16_t tempCheatSize = REQUEST_NUMBER_MAXIMUM_LENGTH + 1;
+                    uint8_t tempText[tempCheatSize];
                     tempText[0] = 0;
                     initializeTextEditor(tempText, REQUEST_NUMBER_MAXIMUM_LENGTH, true);
                     int8_t tempResult2 = runTextEditor();
@@ -3133,7 +3157,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 if (tempFunction == SYMBOL_STRING) {
                     int8_t tempType = (tempArgumentList + 0)->type;
                     if (tempType == VALUE_TYPE_NUMBER) {
-                        uint8_t tempBuffer[NUMBER_LITERAL_MAXIMUM_LENGTH + 1];
+                        volatile int16_t tempCheatSize = NUMBER_LITERAL_MAXIMUM_LENGTH + 1;
+                        uint8_t tempBuffer[tempCheatSize];
                         convertFloatToText(tempBuffer, *(float *)((tempArgumentList + 0)->data));
                         tempResult.value.type = VALUE_TYPE_STRING;
                         int8_t *tempString = createString(tempBuffer);
@@ -3535,7 +3560,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     tempCode += 1;
                     index = 0;
                     while (index < tempArgumentAmount + 1) {
-                        uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+                        volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
+                        uint8_t tempBuffer[tempCheatSize];
                         int8_t tempIndex = 0;
                         while (true) {
                             uint8_t tempSymbol = readStorageInt8(tempCode);
@@ -3803,7 +3829,8 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                             }
                         } else if (tempSymbol == '=') {
                             if (tempResult.destination == NULL) {
-                                uint8_t tempBuffer[VARIABLE_NAME_MAXIMUM_LENGTH + 1];
+                                volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
+                                uint8_t tempBuffer[tempCheatSize];
                                 int32_t tempCode = readStorageVariableName(tempBuffer, tempStartCode);
                                 if (tempCode < 0) {
                                     errorCode = tempStartCode;
@@ -4022,7 +4049,8 @@ static void promptFileAction(int32_t address) {
     while (true) {
         int8_t tempResult;
         {
-            int8_t tempName[FILE_NAME_MAXIMUM_LENGTH + 1];
+            volatile int16_t tempCheatSize = FILE_NAME_MAXIMUM_LENGTH + 1;
+            int8_t tempName[tempCheatSize];
             readStorage(tempName, address + FILE_NAME_OFFSET, FILE_NAME_MAXIMUM_LENGTH + 1);
             int8_t *tempTitle = createString(tempName);
             tempResult = menuWithOptionsFromProgMem(tempTitle, MENU_FILE, sizeof(MENU_FILE) / sizeof(*MENU_FILE));
@@ -4074,7 +4102,8 @@ static void mainMenu() {
             uint8_t tempExists;
             readStorage(&tempExists, tempAddress + FILE_EXISTS_OFFSET, 1);
             if (tempExists == FILE_EXISTS_TRUE) {
-                int8_t tempName[FILE_NAME_MAXIMUM_LENGTH + 1];
+                volatile int16_t tempCheatSize = FILE_NAME_MAXIMUM_LENGTH + 1;
+                int8_t tempName[tempCheatSize];
                 readStorage(tempName, tempAddress + FILE_NAME_OFFSET, FILE_NAME_MAXIMUM_LENGTH + 1);
                 int8_t *tempString = createString(tempName);
                 value_t *tempValue = tempListContents + index;
@@ -4430,7 +4459,7 @@ void runTestSuite() {
 }
 
 int main(int argc, const char *argv[]) {
-
+    
     srand(time(NULL));
     
     if (argc == 2) {

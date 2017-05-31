@@ -699,6 +699,7 @@ const int8_t ERROR_MESSAGE_NOT_TOP_LEVEL[] PROGMEM = "ERROR: Not\ntop level.";
 const int8_t ERROR_MESSAGE_MISSING_VALUE[] PROGMEM = "ERROR: Missing\nvalue.";
 const int8_t ERROR_MESSAGE_NUMBER_LITERAL_TOO_LONG[] PROGMEM = "ERROR: Number\nliteral too\nlong.";
 const int8_t ERROR_MESSAGE_VARIABLE_NAME_TOO_LONG[] PROGMEM = "ERROR: Variable\nname too long.";
+const int8_t ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX[] PROGMEM = "ERROR:\nExpression too\ncomplex.";
 
 typedef struct value {
     int8_t type;
@@ -786,6 +787,10 @@ int32_t pgm_read_dword(const int32_t *pointer) {
 
 const void *pgm_read_ptr(const void **pointer) {
     return *pointer;
+}
+
+int8_t nativeStackHasCollision(int16_t offset) {
+    return false;
 }
 
 void displayCharacter(int8_t posX, int8_t posY, int8_t character) {
@@ -2415,6 +2420,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
     tempResult.status = EVALUATION_STATUS_NORMAL;
     tempResult.destination = NULL;
     tempResult.value.type = VALUE_TYPE_MISSING;
+    if (nativeStackHasCollision(100)) {
+        reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, tempStartCode);
+        tempResult.status = EVALUATION_STATUS_QUIT;
+        return tempResult;
+    }
     treasureTracker_t tempTreasureTracker;
     initializeTreasureTracker(&tempTreasureTracker, TREASURE_TYPE_VALUE, &(tempResult.value));
     if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT || tempBranch->action == BRANCH_ACTION_IGNORE_HARD) {
@@ -2646,6 +2656,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
             }
             value_t tempArgumentList[tempArgumentAmount];
             int32_t tempExpressionList[tempArgumentAmount];
+            if (nativeStackHasCollision(100)) {
+                reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, tempStartCode);
+                tempResult.status = EVALUATION_STATUS_QUIT;
+                return tempResult;
+            }
             treasureTracker_t tempTreasureTracker2;
             initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE_ARRAY, tempArgumentList);
             int8_t index = 0;
@@ -2929,6 +2944,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 if (tempFunction == SYMBOL_REQUEST_STRING) {
                     volatile int16_t tempCheatSize = REQUEST_STRING_MAXIMUM_LENGTH + 1;
                     uint8_t tempText[tempCheatSize];
+                    if (nativeStackHasCollision(100)) {
+                        reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     tempText[0] = 0;
                     initializeTextEditor(tempText, REQUEST_STRING_MAXIMUM_LENGTH, false);
                     int8_t tempResult2 = runTextEditor();
@@ -3520,6 +3540,11 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                 int8_t *tempPreviousScope = localScope;
                 {
                     value_t tempArgumentList[tempArgumentAmount];
+                    if (nativeStackHasCollision(100)) {
+                        reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, tempStartCode);
+                        tempResult.status = EVALUATION_STATUS_QUIT;
+                        return tempResult;
+                    }
                     treasureTracker_t tempTreasureTracker2;
                     initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE_ARRAY, tempArgumentList);
                     int8_t index = 0;

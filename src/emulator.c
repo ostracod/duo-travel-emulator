@@ -971,7 +971,7 @@ void scrambleMemory() {
     }
 }
 
-static void convertFloatToText(int8_t *destination, float number) {
+void convertFloatToText(int8_t *destination, float number) {
     float tempNumber;
     if (number < 0.0) {
         tempNumber = -number;
@@ -1022,7 +1022,7 @@ static void convertFloatToText(int8_t *destination, float number) {
     }
 }
 
-static float convertTextToFloat(int8_t *text) {
+float convertTextToFloat(int8_t *text) {
     return atof(text);
 }
 

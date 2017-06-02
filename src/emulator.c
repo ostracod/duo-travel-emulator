@@ -646,17 +646,20 @@ const int8_t MENU_OPTION_SAVE[] PROGMEM = "Save";
 const int8_t MENU_OPTION_QUIT[] PROGMEM = "Quit";
 const int8_t MENU_OPTION_YES_DELETE[] PROGMEM = "Yes delete";
 const int8_t MENU_OPTION_NO_DELETE[] PROGMEM = "Do not delete";
+const int8_t MENU_OPTION_GET_SIZE[] PROGMEM = "Get size";
 
 const int8_t * const MENU_FILE[] PROGMEM = {
     MENU_OPTION_RUN,
     MENU_OPTION_EDIT,
+    MENU_OPTION_GET_SIZE,
     MENU_OPTION_RENAME,
     MENU_OPTION_DELETE
 };
 
 const int8_t * const MENU_TEXT_EDITOR[] PROGMEM = {
     MENU_OPTION_SAVE,
-    MENU_OPTION_QUIT
+    MENU_OPTION_QUIT,
+    MENU_OPTION_GET_SIZE
 };
 
 const int8_t * const MENU_FILE_DELETE[] PROGMEM = {
@@ -1035,6 +1038,11 @@ void convertFloatToText(int8_t *destination, float number) {
 
 float convertTextToFloat(int8_t *text) {
     return atof(text);
+}
+
+// Note: Ignores base. Always uses base 10.
+void itoa(int32_t value, int8_t *destination, int8_t base) {
+    sprintf(destination, "%d", value);
 }
 
 static int16_t getProgMemTextLength(const int8_t *text) {
@@ -1955,6 +1963,16 @@ static int8_t promptDeleteFile(int32_t address) {
         return true;
     }
     return false;
+}
+
+static void printFileSize(int16_t size) {
+    int8_t tempBuffer[20];
+    itoa(size, tempBuffer, 10);
+    int8_t index = strlen(tempBuffer);
+    tempBuffer[index] = '/';
+    index += 1;
+    itoa(FILE_MAXIMUM_SIZE, tempBuffer + index, 10);
+    printText(tempBuffer);
 }
 
 static int8_t isUnaryOperator(uint8_t symbol) {
@@ -4159,6 +4177,10 @@ static void editFile(int32_t address) {
                 tempShouldQuitEditor = true;
                 break;
             }
+            if (tempResult == 2) {
+                int16_t tempSize = strlen(memory);
+                printFileSize(tempSize);
+            }
         }
         if (tempShouldQuitEditor) {
             break;
@@ -4187,9 +4209,14 @@ static void promptFileAction(int32_t address) {
             editFile(address);
         }
         if (tempResult == 2) {
-            promptRenameFile(address);
+            int16_t tempSize;
+            readStorage(&tempSize, address + FILE_SIZE_OFFSET, 2);
+            printFileSize(tempSize);
         }
         if (tempResult == 3) {
+            promptRenameFile(address);
+        }
+        if (tempResult == 4) {
             int8_t tempResult = promptDeleteFile(address);
             if (tempResult) {
                 break;

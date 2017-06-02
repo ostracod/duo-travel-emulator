@@ -736,6 +736,17 @@ typedef struct treasureTracker {
     void *treasure;
 } treasureTracker_t;
 
+typedef struct expressionStatus {
+    expressionResult_t result;
+    treasureTracker_t treasureTracker;
+    uint8_t symbol;
+    int32_t code;
+    int32_t startCode;
+    value_t *argumentList;
+    int32_t *expressionList;
+    branch_t *branch;
+} expressionStatus_t;
+
 WINDOW *window;
 int32_t windowWidth;
 int32_t windowHeight;
@@ -2391,6 +2402,7 @@ static void reportError(const int8_t *message, int32_t code) {
 }
 
 static expressionResult_t runCode(int32_t address);
+static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel);
 
 static void debugPrint(int16_t value) {
     clearDisplay();
@@ -2408,1226 +2420,1614 @@ static void debugPrint(int16_t value) {
     getKey();
 }
 
-static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
-    branch_t *tempBranch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
-    //mvprintw(0, 0, "%d %d      ", code, tempBranch->action);
-    //getch();
-    int32_t tempStartCode = code;
-    uint8_t tempSymbol = readStorageInt8(code);
-    expressionResult_t tempResult;
-    //debugPrint(tempSymbol);
-    //debugPrint((int16_t)&tempResult);
-    tempResult.status = EVALUATION_STATUS_NORMAL;
-    tempResult.destination = NULL;
-    tempResult.value.type = VALUE_TYPE_MISSING;
-    if (nativeStackHasCollision(100)) {
-        reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, tempStartCode);
-        tempResult.status = EVALUATION_STATUS_QUIT;
-        return tempResult;
+static void __attribute__ ((noinline)) evaluateControlFunction(expressionStatus_t *status) {
+    if (status->symbol == SYMBOL_RETURN) {
+        status->result.status = EVALUATION_STATUS_RETURN;
     }
-    treasureTracker_t tempTreasureTracker;
-    initializeTreasureTracker(&tempTreasureTracker, TREASURE_TYPE_VALUE, &(tempResult.value));
-    if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT || tempBranch->action == BRANCH_ACTION_IGNORE_HARD) {
-        if (tempSymbol == SYMBOL_IF || tempSymbol == SYMBOL_WHILE || tempSymbol == SYMBOL_FUNCTION) {
-            int8_t tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
-            if (!tempSuccess) {
-                errorCode = tempStartCode;
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
+    if (status->symbol == SYMBOL_RETURN_WITH_VALUE) {
+        status->result.status = EVALUATION_STATUS_RETURN;
+        status->result.value = status->argumentList[0];
+    }
+    if (status->symbol == SYMBOL_IF) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t tempSuccess;
+        if (*(float *)((status->argumentList + 0)->data) == 0.0) {
+            tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_SOFT, 0);
+        } else {
+            tempSuccess = pushBranch(BRANCH_ACTION_RUN, 0);
+        }
+        if (!tempSuccess) {
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_ELSE_IF) {
+        status->branch->action = BRANCH_ACTION_IGNORE_HARD;
+    }
+    if (status->symbol == SYMBOL_ELSE) {
+        status->branch->action = BRANCH_ACTION_IGNORE_HARD;
+    }
+    if (status->symbol == SYMBOL_WHILE) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t tempSuccess;
+        if (*(float *)((status->argumentList + 0)->data) == 0.0) {
+            tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+        } else {
+            tempSuccess = pushBranch(BRANCH_ACTION_LOOP, status->startCode);
+        }
+        if (!tempSuccess) {
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_BREAK) {
+        branch_t *tempBranch2 = status->branch;
+        while (true) {
+            int8_t tempAction = tempBranch2->action;
+            tempBranch2->action = BRANCH_ACTION_IGNORE_HARD;
+            if (tempAction == BRANCH_ACTION_LOOP) {
+                break;
             }
-        } else if (tempSymbol == SYMBOL_ELSE_IF) {
-            if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT) {
-                tempBranch->action = BRANCH_ACTION_RUN;
-                expressionResult_t tempResult2 = evaluateExpression(code + 1, 99, false);
-                tempBranch->action = BRANCH_ACTION_IGNORE_SOFT;
-                firstTreasureTracker = &tempTreasureTracker;
-                treasureTracker_t tempTreasureTracker2;
-                initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
-                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                    tempResult.status = tempResult2.status;
-                    return tempResult;
-                }
-                code = tempResult2.nextCode;
-                if (tempResult2.value.type == VALUE_TYPE_MISSING) {
-                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                    reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                if (*(float *)(tempResult2.value.data) != 0.0) {
-                    tempBranch->action = BRANCH_ACTION_RUN;
-                }
+            tempBranch2 = tempBranch2->previous;
+            if (tempBranch2 == NULL) {
+                reportError(ERROR_MESSAGE_BAD_BREAK_STATEMENT, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
             }
-        } else if (tempSymbol == SYMBOL_ELSE) {
-            if (tempBranch->action == BRANCH_ACTION_IGNORE_SOFT) {
-                tempBranch->action = BRANCH_ACTION_RUN;
+        }
+    }
+    if (status->symbol == SYMBOL_CONTINUE) {
+        while (true) {
+            if (status->branch->action == BRANCH_ACTION_LOOP) {
+                status->code = status->branch->address;
+                break;
             }
-        } else if (tempSymbol == SYMBOL_END) {
             int8_t tempSuccess = popBranch();
             if (!tempSuccess) {
-                reportError(ERROR_MESSAGE_BAD_END_STATEMENT, tempStartCode);
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
+                reportError(ERROR_MESSAGE_BAD_CONTINUE_STATEMENT, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            status->branch = status->branch->previous;
+        }
+    }
+    if (status->symbol == SYMBOL_QUIT) {
+        status->result.status = EVALUATION_STATUS_QUIT;
+    }
+    if (status->symbol == SYMBOL_END) {
+        int8_t tempAction = status->branch->action;
+        int32_t tempAddress = status->branch->address;
+        int8_t tempSuccess = popBranch();
+        if (!tempSuccess) {
+            if (localScope != globalScope) {
+                status->result.status = EVALUATION_STATUS_RETURN;
+            } else {
+                reportError(ERROR_MESSAGE_BAD_END_STATEMENT, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
             }
         }
-        code = skipStorageLine(code);
+        if (tempAction == BRANCH_ACTION_LOOP) {
+            status->code = tempAddress;
+        }
+    }
+    if (status->symbol == SYMBOL_FUNCTION) {
+        volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
+        uint8_t tempBuffer[tempCheatSize];
+        int32_t tempCode = readStorageVariableName(tempBuffer, status->expressionList[0]);
+        if (tempCode < 0) {
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        value_t *tempValue = findVariableValueByName(tempBuffer);
+        if (tempValue == NULL) {
+            tempValue = createVariable(tempBuffer);
+            if (tempValue == NULL) {
+                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+        }
+        tempValue->type = VALUE_TYPE_FUNCTION;
+        *(int32_t *)(tempValue->data) = status->startCode;
+        int8_t tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+        if (!tempSuccess) {
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+}
+
+static void __attribute__ ((noinline)) evaluateMathFunction(expressionStatus_t *status) {
+    if (status->symbol == SYMBOL_RANDOM) {
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = (float)(rand() % 10000) / 10000.0;
     } else {
-        if ((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.') {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_RANDOM_INTEGER) {
+        if ((status->argumentList + 1)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int32_t tempMinimum = *(float *)((status->argumentList + 0)->data);
+        int32_t tempMaximum = *(float *)((status->argumentList + 1)->data);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = tempMinimum + (rand() % (tempMaximum - tempMinimum + 1));
+    }
+    if (status->symbol == SYMBOL_ABSOLUTE_VALUE) {
+        float tempNumber = *(float *)((status->argumentList + 0)->data);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = fabs(tempNumber);
+    }
+    if (status->symbol == SYMBOL_ROUND) {
+        float tempNumber = *(float *)((status->argumentList + 0)->data);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = floor(tempNumber + 0.5);
+    }
+    if (status->symbol == SYMBOL_FLOOR) {
+        float tempNumber = *(float *)((status->argumentList + 0)->data);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = floor(tempNumber);
+    }
+    if (status->symbol == SYMBOL_CEILING) {
+        float tempNumber = *(float *)((status->argumentList + 0)->data);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = ceil(tempNumber);
+    }
+    if (status->symbol == SYMBOL_SINE) {
+        float tempNumber = *(float *)((status->argumentList + 0)->data);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = sin(tempNumber);
+    }
+    if (status->symbol == SYMBOL_COSINE) {
+        float tempNumber = *(float *)((status->argumentList + 0)->data);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = cos(tempNumber);
+    }
+    if (status->symbol == SYMBOL_TANGENT) {
+        float tempNumber = *(float *)((status->argumentList + 0)->data);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = tan(tempNumber);
+    }
+    if (status->symbol == SYMBOL_SQUARE_ROOT) {
+        float tempNumber = *(float *)((status->argumentList + 0)->data);
+        if (tempNumber < 0.0) {
+            reportError(ERROR_MESSAGE_BAD_VALUE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = sqrt(tempNumber);
+    }
+    if (status->symbol == SYMBOL_POWER) {
+        if ((status->argumentList + 1)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        float tempNumber1 = *(float *)((status->argumentList + 0)->data);
+        float tempNumber2 = *(float *)((status->argumentList + 1)->data);
+        if (tempNumber1 < 0.0 && floor(tempNumber2) != tempNumber2) {
+            reportError(ERROR_MESSAGE_BAD_VALUE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = pow(tempNumber1, tempNumber2);
+    }
+    if (status->symbol == SYMBOL_LOG) {
+        if ((status->argumentList + 1)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        float tempNumber1 = *(float *)((status->argumentList + 0)->data);
+        float tempNumber2 = *(float *)((status->argumentList + 1)->data);
+        if (tempNumber1 <= 0.0 || tempNumber2 <= 0.0) {
+            reportError(ERROR_MESSAGE_BAD_VALUE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = log(tempNumber1) / log(tempNumber2);
+    }
+}
+
+static void __attribute__ ((noinline)) evaluateInputOutputFunction(expressionStatus_t *status) {
+    int8_t tempShouldDisplayRunning = false;
+    if (status->symbol == SYMBOL_PRINT) {
+        int8_t tempResult2 = printValue(status->argumentList + 0);
+        if (!tempResult2) {
+            if (errorMessage != NULL) {
+                errorCode = status->startCode;
+            }
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        } else {
+            tempShouldDisplayRunning = true;
+        }
+    }
+    if (status->symbol == SYMBOL_REQUEST_STRING) {
+        volatile int16_t tempCheatSize = REQUEST_STRING_MAXIMUM_LENGTH + 1;
+        uint8_t tempText[tempCheatSize];
+        if (nativeStackHasCollision(100)) {
+            reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        tempText[0] = 0;
+        initializeTextEditor(tempText, REQUEST_STRING_MAXIMUM_LENGTH, false);
+        int8_t tempResult2 = runTextEditor();
+        if (!tempResult2) {
+            status->result.status = EVALUATION_STATUS_QUIT;
+        } else {
+            status->result.value.type = VALUE_TYPE_STRING;
+            int8_t *tempString = createString(tempText);
+            if (tempString == NULL) {
+                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            *(int8_t **)(status->result.value.data) = tempString;
+            tempShouldDisplayRunning = true;
+        }
+    }
+    if (status->symbol == SYMBOL_REQUEST_NUMBER) {
+        volatile int16_t tempCheatSize = REQUEST_NUMBER_MAXIMUM_LENGTH + 1;
+        uint8_t tempText[tempCheatSize];
+        tempText[0] = 0;
+        initializeTextEditor(tempText, REQUEST_NUMBER_MAXIMUM_LENGTH, true);
+        int8_t tempResult2 = runTextEditor();
+        if (!tempResult2) {
+            status->result.status = EVALUATION_STATUS_QUIT;
+        } else {
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            *(float *)(status->result.value.data) = convertTextToFloat(tempText);
+            tempShouldDisplayRunning = true;
+        }
+    }
+    if (status->symbol == SYMBOL_MENU) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_STRING || (status->argumentList + 1)->type != VALUE_TYPE_LIST) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempTitle = *(int8_t **)((status->argumentList + 0)->data);
+        int8_t *tempList = *(int8_t **)((status->argumentList + 1)->data);
+        int8_t tempResult2 = menu(tempTitle, tempList);
+        if (tempResult2 == MENU_RESULT_ERROR) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        } else if (tempResult2 < MENU_RESULT_ESCAPE) {
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        } else {
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            *(float *)(status->result.value.data) = tempResult2;
+            tempShouldDisplayRunning = true;
+        }
+    }
+    if (status->symbol == SYMBOL_FILE_EXISTS) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_STRING) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempPointer = *(int8_t **)((status->argumentList + 0)->data);
+        int8_t *tempString = *(int8_t **)tempPointer;
+        int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = (tempFile >= 0);
+    }
+    if (status->symbol == SYMBOL_FILE_SIZE) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_STRING) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempPointer = *(int8_t **)((status->argumentList + 0)->data);
+        int8_t *tempString = *(int8_t **)tempPointer;
+        int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+        if (tempFile < 0) {
+            reportError(ERROR_MESSAGE_MISSING_FILE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int16_t tempSize;
+        readStorage(&tempSize, tempFile + FILE_SIZE_OFFSET, 2);
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = tempSize;
+    }
+    if (status->symbol == SYMBOL_FILE_CREATE) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_STRING) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempPointer = *(int8_t **)((status->argumentList + 0)->data);
+        int8_t *tempString = *(int8_t **)tempPointer;
+        int32_t tempFile = fileCreate(tempString + STRING_DATA_OFFSET);
+        if (tempFile < 0) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_FILE_DELETE) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_STRING) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempPointer = *(int8_t **)((status->argumentList + 0)->data);
+        int8_t *tempString = *(int8_t **)tempPointer;
+        int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+        if (tempFile < 0) {
+            reportError(ERROR_MESSAGE_MISSING_FILE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        uint8_t tempStatus = FILE_EXISTS_FALSE;
+        writeStorage(tempFile + FILE_EXISTS_OFFSET, &tempStatus, 1);
+    }
+    if (status->symbol == SYMBOL_FILE_SET_NAME) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_STRING || (status->argumentList + 1)->type != VALUE_TYPE_STRING) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempPointer1 = *(int8_t **)((status->argumentList + 0)->data);
+        int8_t *tempPointer2 = *(int8_t **)((status->argumentList + 1)->data);
+        int8_t *tempString1 = *(int8_t **)tempPointer1;
+        int8_t *tempString2 = *(int8_t **)tempPointer2;
+        int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
+        if (tempFile < 0) {
+            reportError(ERROR_MESSAGE_MISSING_FILE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t tempSuccess = fileSetName(tempFile, tempString2 + STRING_DATA_OFFSET);
+        if (!tempSuccess) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_FILE_READ) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_STRING || (status->argumentList + 1)->type != VALUE_TYPE_NUMBER
+                || (status->argumentList + 2)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempPointer = *(int8_t **)((status->argumentList + 0)->data);
+        float tempIndex = *(float *)((status->argumentList + 1)->data);
+        float tempAmount = *(float *)((status->argumentList + 2)->data);
+        int8_t *tempString = *(int8_t **)tempPointer;
+        int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+        if (tempFile < 0) {
+            reportError(ERROR_MESSAGE_MISSING_FILE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempResult2 = fileRead(tempFile, tempIndex, tempAmount);
+        if (tempResult2 == NULL) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        status->result.value.type = VALUE_TYPE_STRING;
+        *(int8_t **)(status->result.value.data) = tempResult2;
+    }
+    if (status->symbol == SYMBOL_FILE_WRITE) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_STRING || (status->argumentList + 1)->type != VALUE_TYPE_STRING) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempPointer1 = *(int8_t **)((status->argumentList + 0)->data);
+        int8_t *tempPointer2 = *(int8_t **)((status->argumentList + 1)->data);
+        int8_t *tempString1 = *(int8_t **)tempPointer1;
+        int8_t *tempString2 = *(int8_t **)tempPointer2;
+        int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
+        if (tempFile < 0) {
+            reportError(ERROR_MESSAGE_MISSING_FILE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t tempSuccess = fileWrite(tempFile, tempString2 + STRING_DATA_OFFSET);
+        if (!tempSuccess) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_FILE_IMPORT) {
+        if ((status->argumentList + 0)->type != VALUE_TYPE_STRING) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int8_t *tempPointer = *(int8_t **)((status->argumentList + 0)->data);
+        int8_t *tempString = *(int8_t **)tempPointer;
+        int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
+        if (tempFile < 0) {
+            reportError(ERROR_MESSAGE_MISSING_FILE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        expressionResult_t tempResult2 = runCode(tempFile + FILE_DATA_OFFSET);
+        if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+            status->result.status = tempResult2.status;
+            return;
+        }
+    }
+    if (tempShouldDisplayRunning) {
+        clearDisplay();
+        displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
+    }
+}
+
+static void __attribute__ ((noinline)) evaluateValueFunction(expressionStatus_t *status) {
+    if (status->symbol == SYMBOL_NUMBER) {
+        int8_t tempType = (status->argumentList + 0)->type;
+        if (tempType == VALUE_TYPE_NUMBER) {
+            status->result.value = status->argumentList[0];
+        } else if (tempType == VALUE_TYPE_STRING) {
+            int8_t *tempPointer = *(int8_t **)((status->argumentList + 0)->data);
+            int8_t *tempString = *(int8_t **)tempPointer;
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            *(float *)(status->result.value.data) = convertTextToFloat(tempString + STRING_DATA_OFFSET);
+        } else {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_STRING) {
+        int8_t tempType = (status->argumentList + 0)->type;
+        if (tempType == VALUE_TYPE_NUMBER) {
             volatile int16_t tempCheatSize = NUMBER_LITERAL_MAXIMUM_LENGTH + 1;
             uint8_t tempBuffer[tempCheatSize];
-            tempBuffer[0] = tempSymbol;
-            code += 1;
-            uint8_t tempLastSymbol = 0;
-            int8_t index = 1;
-            while (true) {
-                if (index >= NUMBER_LITERAL_MAXIMUM_LENGTH) {
-                    reportError(ERROR_MESSAGE_NUMBER_LITERAL_TOO_LONG, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                tempSymbol = readStorageInt8(code);
-                if (!((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.' || tempSymbol == 'e'
-                        || (tempSymbol == '-' && tempLastSymbol == 'e'))) {
-                    tempBuffer[index] = 0;
-                    break;
-                }
-                tempBuffer[index] = tempSymbol;
-                tempLastSymbol = tempSymbol;
-                code += 1;
-                index += 1;
-            }
-            tempResult.value.type = VALUE_TYPE_NUMBER;
-            float tempNumber = convertTextToFloat(tempBuffer);
-            *(float *)(tempResult.value.data) = tempNumber;
-        } else if ((tempSymbol >= 'A' && tempSymbol <= 'Z') || tempSymbol == '_') {
-            volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
-            uint8_t tempBuffer[tempCheatSize];
-            code = readStorageVariableName(tempBuffer, code);
-            if (code < 0) {
-                errorCode = tempStartCode;
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
-            }
-            tempResult.destinationType = DESTINATION_TYPE_VALUE;
-            tempResult.destination = (int8_t *)findVariableValueByName(tempBuffer);
-            if (tempResult.destination != NULL) {
-                tempResult.value = *(value_t *)(tempResult.destination);
-            }
-        } else if (tempSymbol == '\'') {
-            code += 1;
-            uint8_t tempSymbol = readStorageInt8(code);
-            code += 1;
-            if (tempSymbol == '\\') {
-                tempSymbol = readStorageInt8(code);
-                code += 1;
-                if (tempSymbol == 'N') {
-                    tempSymbol = '\n';
-                }
-            }
-            int8_t tempSymbol2 = readStorageInt8(code);
-            if (tempSymbol2 != '\'') {
-                reportError(ERROR_MESSAGE_MISSING_APOSTROPHE, tempStartCode);
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
-            }
-            code += 1;
-            tempResult.value.type = VALUE_TYPE_NUMBER;
-            *(float *)&(tempResult.value.data) = tempSymbol;
-        } else if (tempSymbol == '"') {
-            code += 1;
-            int16_t tempLength = getStringLiteralLength(code);
-            int8_t *tempString = createEmptyString(tempLength);
+            convertFloatToText(tempBuffer, *(float *)((status->argumentList + 0)->data));
+            status->result.value.type = VALUE_TYPE_STRING;
+            int8_t *tempString = createString(tempBuffer);
             if (tempString == NULL) {
-                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
+                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
             }
-            int8_t *tempStringContents = *(int8_t **)tempString;
-            int16_t index = 0;
-            int8_t tempIsEscaped = false;
-            while (true) {
-                uint8_t tempSymbol = readStorageInt8(code);
-                if (tempSymbol == 0) {
-                    reportError(ERROR_MESSAGE_MISSING_QUOTATION_MARK, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                if (tempIsEscaped) {
-                    if (tempSymbol == 'N') {
-                        *(tempStringContents + STRING_DATA_OFFSET + index) = '\n';
-                    } else {
-                        *(tempStringContents + STRING_DATA_OFFSET + index) = tempSymbol;
-                    }
-                    index += 1;
-                    tempIsEscaped = false;
-                } else {
-                    if (tempSymbol == '\\') {
-                        tempIsEscaped = true;
-                    } else if (tempSymbol == '"') {
-                        code += 1;
-                        break;
-                    } else {
-                        *(tempStringContents + STRING_DATA_OFFSET + index) = tempSymbol;
-                        index += 1;
-                    }
-                }
-                code += 1;
-            }
-            *(tempStringContents + STRING_DATA_OFFSET + index) = 0;
-            tempResult.value.type = VALUE_TYPE_STRING;
-            *(int8_t **)(tempResult.value.data) = tempString;
-        } else if (tempSymbol == '[') {
-            code += 1;
-            int8_t *tempList = createEmptyList(0);
-            if (tempList == NULL) {
-                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
-            }
-            int16_t index = 0;
-            tempResult.value.type = VALUE_TYPE_LIST;
-            *(int8_t **)(tempResult.value.data) = tempList;
-            while (true) {
-                uint8_t tempSymbol = readStorageInt8(code);
-                if (tempSymbol == '\n' || tempSymbol == 0) {
-                    reportError(ERROR_MESSAGE_MISSING_BRACKET, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                if (tempSymbol == ']') {
-                    code += 1;
-                    break;
-                }
-                if (tempSymbol == ',') {
-                    code += 1;
-                }
-                expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
-                // Treasure does not need to be tracked because it will
-                // be immediately inserted into the tracked list.
-                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                    tempResult.status = tempResult2.status;
-                    return tempResult;
-                }
-                if (tempResult2.value.type == VALUE_TYPE_MISSING) {
-                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                code = tempResult2.nextCode;
-                int8_t tempSuccess = insertListValue(tempList, index, &(tempResult2.value));
-                if (!tempSuccess) {
-                    errorCode = tempStartCode;
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                index += 1;
-            }
-        } else if (tempSymbol == '(') {
-            code += 1;
-            expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
-            firstTreasureTracker = &tempTreasureTracker;
-            treasureTracker_t tempTreasureTracker2;
-            initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
-            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                tempResult.status = tempResult2.status;
-                return tempResult;
-            }
-            code = tempResult2.nextCode;
-            tempResult.destinationType = tempResult2.destinationType;
-            tempResult.destination = tempResult2.destination;
-            tempResult.value = tempResult2.value;
-            tempSymbol = readStorageInt8(code);
-            if (tempSymbol != ')') {
-                reportError(ERROR_MESSAGE_MISSING_PARENTHESIS, tempStartCode);
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
-            }
-            code += 1;
-        } else if (tempSymbol >= FIRST_FUNCTION_SYMBOL && tempSymbol <= LAST_FUNCTION_SYMBOL) {
-            uint8_t tempFunction = tempSymbol;
-            code += 1;
-            int8_t tempArgumentAmount = pgm_read_byte(FUNCTION_ARGUMENT_AMOUNT_LIST + (tempSymbol - FIRST_FUNCTION_SYMBOL));
-            if (tempArgumentAmount < 0) {
-                tempArgumentAmount = getCustomFunctionArgumentAmount(tempStartCode) + 1;
-            }
-            value_t tempArgumentList[tempArgumentAmount];
-            int32_t tempExpressionList[tempArgumentAmount];
-            if (nativeStackHasCollision(100)) {
-                reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, tempStartCode);
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
-            }
-            treasureTracker_t tempTreasureTracker2;
-            initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE_ARRAY, tempArgumentList);
-            int8_t index = 0;
-            while (index < tempArgumentAmount) {
-                tempExpressionList[index] = code;
-                expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
-                firstTreasureTracker = &tempTreasureTracker2;
-                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                    tempResult.status = tempResult2.status;
-                    return tempResult;
-                }
-                if (tempResult2.value.type == VALUE_TYPE_MISSING && tempFunction != SYMBOL_FUNCTION) {
-                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                tempArgumentList[index] = tempResult2.value;
-                tempTreasureTracker2.amount += 1;
-                code = tempResult2.nextCode;
-                if (index < tempArgumentAmount - 1) {
-                    int8_t tempSymbol = readStorageInt8(code);
-                    if (tempSymbol != ',') {
-                        reportError(ERROR_MESSAGE_MISSING_COMMA, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    code += 1;
-                }
-                index += 1;
-            }
-            int8_t tempShouldDisplayRunning = false;
-            // Control functions.
-            if (tempFunction >= SYMBOL_IF && tempFunction <= SYMBOL_QUIT) {
-                if (!isTopLevel) {
-                    reportError(ERROR_MESSAGE_NOT_TOP_LEVEL, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                if (tempFunction == SYMBOL_RETURN) {
-                    tempResult.status = EVALUATION_STATUS_RETURN;
-                }
-                if (tempFunction == SYMBOL_RETURN_WITH_VALUE) {
-                    tempResult.status = EVALUATION_STATUS_RETURN;
-                    tempResult.value = tempArgumentList[0];
-                }
-                if (tempFunction == SYMBOL_IF) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t tempSuccess;
-                    if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
-                        tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_SOFT, 0);
-                    } else {
-                        tempSuccess = pushBranch(BRANCH_ACTION_RUN, 0);
-                    }
-                    if (!tempSuccess) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_ELSE_IF) {
-                    tempBranch->action = BRANCH_ACTION_IGNORE_HARD;
-                }
-                if (tempFunction == SYMBOL_ELSE) {
-                    tempBranch->action = BRANCH_ACTION_IGNORE_HARD;
-                }
-                if (tempFunction == SYMBOL_WHILE) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t tempSuccess;
-                    if (*(float *)((tempArgumentList + 0)->data) == 0.0) {
-                        tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
-                    } else {
-                        tempSuccess = pushBranch(BRANCH_ACTION_LOOP, tempStartCode);
-                    }
-                    if (!tempSuccess) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_BREAK) {
-                    branch_t *tempBranch2 = tempBranch;
-                    while (true) {
-                        int8_t tempAction = tempBranch2->action;
-                        tempBranch2->action = BRANCH_ACTION_IGNORE_HARD;
-                        if (tempAction == BRANCH_ACTION_LOOP) {
-                            break;
-                        }
-                        tempBranch2 = tempBranch2->previous;
-                        if (tempBranch2 == NULL) {
-                            reportError(ERROR_MESSAGE_BAD_BREAK_STATEMENT, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                    }
-                }
-                if (tempFunction == SYMBOL_CONTINUE) {
-                    while (true) {
-                        if (tempBranch->action == BRANCH_ACTION_LOOP) {
-                            code = tempBranch->address;
-                            break;
-                        }
-                        int8_t tempSuccess = popBranch();
-                        if (!tempSuccess) {
-                            reportError(ERROR_MESSAGE_BAD_CONTINUE_STATEMENT, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                        tempBranch = tempBranch->previous;
-                    }
-                }
-                if (tempFunction == SYMBOL_QUIT) {
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                }
-                if (tempFunction == SYMBOL_END) {
-                    int8_t tempAction = tempBranch->action;
-                    int32_t tempAddress = tempBranch->address;
-                    int8_t tempSuccess = popBranch();
-                    if (!tempSuccess) {
-                        if (localScope != globalScope) {
-                            tempResult.status = EVALUATION_STATUS_RETURN;
-                        } else {
-                            reportError(ERROR_MESSAGE_BAD_END_STATEMENT, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                    }
-                    if (tempAction == BRANCH_ACTION_LOOP) {
-                        code = tempAddress;
-                    }
-                }
-                if (tempFunction == SYMBOL_FUNCTION) {
-                    volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
-                    uint8_t tempBuffer[tempCheatSize];
-                    int32_t tempCode = readStorageVariableName(tempBuffer, tempExpressionList[0]);
-                    if (tempCode < 0) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    value_t *tempValue = findVariableValueByName(tempBuffer);
-                    if (tempValue == NULL) {
-                        tempValue = createVariable(tempBuffer);
-                        if (tempValue == NULL) {
-                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                    }
-                    tempValue->type = VALUE_TYPE_FUNCTION;
-                    *(int32_t *)(tempValue->data) = tempStartCode;
-                    int8_t tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
-                    if (!tempSuccess) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-            }
-            // Math functions.
-            if (tempFunction >= SYMBOL_RANDOM && tempFunction <= SYMBOL_LOG) {
-                if (tempFunction == SYMBOL_RANDOM) {
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = (float)(rand() % 10000) / 10000.0;
-                } else {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_RANDOM_INTEGER) {
-                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int32_t tempMinimum = *(float *)((tempArgumentList + 0)->data);
-                    int32_t tempMaximum = *(float *)((tempArgumentList + 1)->data);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = tempMinimum + (rand() % (tempMaximum - tempMinimum + 1));
-                }
-                if (tempFunction == SYMBOL_ABSOLUTE_VALUE) {
-                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = fabs(tempNumber);
-                }
-                if (tempFunction == SYMBOL_ROUND) {
-                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = floor(tempNumber + 0.5);
-                }
-                if (tempFunction == SYMBOL_FLOOR) {
-                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = floor(tempNumber);
-                }
-                if (tempFunction == SYMBOL_CEILING) {
-                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = ceil(tempNumber);
-                }
-                if (tempFunction == SYMBOL_SINE) {
-                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = sin(tempNumber);
-                }
-                if (tempFunction == SYMBOL_COSINE) {
-                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = cos(tempNumber);
-                }
-                if (tempFunction == SYMBOL_TANGENT) {
-                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = tan(tempNumber);
-                }
-                if (tempFunction == SYMBOL_SQUARE_ROOT) {
-                    float tempNumber = *(float *)((tempArgumentList + 0)->data);
-                    if (tempNumber < 0.0) {
-                        reportError(ERROR_MESSAGE_BAD_VALUE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = sqrt(tempNumber);
-                }
-                if (tempFunction == SYMBOL_POWER) {
-                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    float tempNumber1 = *(float *)((tempArgumentList + 0)->data);
-                    float tempNumber2 = *(float *)((tempArgumentList + 1)->data);
-                    if (tempNumber1 < 0.0 && floor(tempNumber2) != tempNumber2) {
-                        reportError(ERROR_MESSAGE_BAD_VALUE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = pow(tempNumber1, tempNumber2);
-                }
-                if (tempFunction == SYMBOL_LOG) {
-                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    float tempNumber1 = *(float *)((tempArgumentList + 0)->data);
-                    float tempNumber2 = *(float *)((tempArgumentList + 1)->data);
-                    if (tempNumber1 <= 0.0 || tempNumber2 <= 0.0) {
-                        reportError(ERROR_MESSAGE_BAD_VALUE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = log(tempNumber1) / log(tempNumber2);
-                }
-            }
-            if (tempFunction >= SYMBOL_PRINT && tempFunction <= SYMBOL_FILE_IMPORT) {
-                if (tempFunction == SYMBOL_PRINT) {
-                    int8_t tempResult2 = printValue(tempArgumentList + 0);
-                    if (!tempResult2) {
-                        if (errorMessage != NULL) {
-                            errorCode = tempStartCode;
-                        }
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    } else {
-                        tempShouldDisplayRunning = true;
-                    }
-                }
-                if (tempFunction == SYMBOL_REQUEST_STRING) {
-                    volatile int16_t tempCheatSize = REQUEST_STRING_MAXIMUM_LENGTH + 1;
-                    uint8_t tempText[tempCheatSize];
-                    if (nativeStackHasCollision(100)) {
-                        reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    tempText[0] = 0;
-                    initializeTextEditor(tempText, REQUEST_STRING_MAXIMUM_LENGTH, false);
-                    int8_t tempResult2 = runTextEditor();
-                    if (!tempResult2) {
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                    } else {
-                        tempResult.value.type = VALUE_TYPE_STRING;
-                        int8_t *tempString = createString(tempText);
-                        if (tempString == NULL) {
-                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                        *(int8_t **)(tempResult.value.data) = tempString;
-                        tempShouldDisplayRunning = true;
-                    }
-                }
-                if (tempFunction == SYMBOL_REQUEST_NUMBER) {
-                    volatile int16_t tempCheatSize = REQUEST_NUMBER_MAXIMUM_LENGTH + 1;
-                    uint8_t tempText[tempCheatSize];
-                    tempText[0] = 0;
-                    initializeTextEditor(tempText, REQUEST_NUMBER_MAXIMUM_LENGTH, true);
-                    int8_t tempResult2 = runTextEditor();
-                    if (!tempResult2) {
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                    } else {
-                        tempResult.value.type = VALUE_TYPE_NUMBER;
-                        *(float *)(tempResult.value.data) = convertTextToFloat(tempText);
-                        tempShouldDisplayRunning = true;
-                    }
-                }
-                if (tempFunction == SYMBOL_MENU) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING || (tempArgumentList + 1)->type != VALUE_TYPE_LIST) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempTitle = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempList = *(int8_t **)((tempArgumentList + 1)->data);
-                    int8_t tempResult2 = menu(tempTitle, tempList);
-                    if (tempResult2 == MENU_RESULT_ERROR) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    } else if (tempResult2 < MENU_RESULT_ESCAPE) {
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    } else {
-                        tempResult.value.type = VALUE_TYPE_NUMBER;
-                        *(float *)(tempResult.value.data) = tempResult2;
-                        tempShouldDisplayRunning = true;
-                    }
-                }
-                if (tempFunction == SYMBOL_FILE_EXISTS) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempString = *(int8_t **)tempPointer;
-                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = (tempFile >= 0);
-                }
-                if (tempFunction == SYMBOL_FILE_SIZE) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempString = *(int8_t **)tempPointer;
-                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                    if (tempFile < 0) {
-                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int16_t tempSize;
-                    readStorage(&tempSize, tempFile + FILE_SIZE_OFFSET, 2);
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = tempSize;
-                }
-                if (tempFunction == SYMBOL_FILE_CREATE) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempString = *(int8_t **)tempPointer;
-                    int32_t tempFile = fileCreate(tempString + STRING_DATA_OFFSET);
-                    if (tempFile < 0) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_FILE_DELETE) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempString = *(int8_t **)tempPointer;
-                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                    if (tempFile < 0) {
-                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    uint8_t tempStatus = FILE_EXISTS_FALSE;
-                    writeStorage(tempFile + FILE_EXISTS_OFFSET, &tempStatus, 1);
-                }
-                if (tempFunction == SYMBOL_FILE_SET_NAME) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING || (tempArgumentList + 1)->type != VALUE_TYPE_STRING) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempPointer2 = *(int8_t **)((tempArgumentList + 1)->data);
-                    int8_t *tempString1 = *(int8_t **)tempPointer1;
-                    int8_t *tempString2 = *(int8_t **)tempPointer2;
-                    int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
-                    if (tempFile < 0) {
-                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t tempSuccess = fileSetName(tempFile, tempString2 + STRING_DATA_OFFSET);
-                    if (!tempSuccess) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_FILE_READ) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING || (tempArgumentList + 1)->type != VALUE_TYPE_NUMBER
-                            || (tempArgumentList + 2)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                    float tempIndex = *(float *)((tempArgumentList + 1)->data);
-                    float tempAmount = *(float *)((tempArgumentList + 2)->data);
-                    int8_t *tempString = *(int8_t **)tempPointer;
-                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                    if (tempFile < 0) {
-                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempResult2 = fileRead(tempFile, tempIndex, tempAmount);
-                    if (tempResult2 == NULL) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    tempResult.value.type = VALUE_TYPE_STRING;
-                    *(int8_t **)(tempResult.value.data) = tempResult2;
-                }
-                if (tempFunction == SYMBOL_FILE_WRITE) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING || (tempArgumentList + 1)->type != VALUE_TYPE_STRING) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempPointer2 = *(int8_t **)((tempArgumentList + 1)->data);
-                    int8_t *tempString1 = *(int8_t **)tempPointer1;
-                    int8_t *tempString2 = *(int8_t **)tempPointer2;
-                    int32_t tempFile = fileFindByName(tempString1 + STRING_DATA_OFFSET);
-                    if (tempFile < 0) {
-                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t tempSuccess = fileWrite(tempFile, tempString2 + STRING_DATA_OFFSET);
-                    if (!tempSuccess) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_FILE_IMPORT) {
-                    if ((tempArgumentList + 0)->type != VALUE_TYPE_STRING) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                    int8_t *tempString = *(int8_t **)tempPointer;
-                    int32_t tempFile = fileFindByName(tempString + STRING_DATA_OFFSET);
-                    if (tempFile < 0) {
-                        reportError(ERROR_MESSAGE_MISSING_FILE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    expressionResult_t tempResult2 = runCode(tempFile + FILE_DATA_OFFSET);
-                    if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                        tempResult.status = tempResult2.status;
-                        return tempResult;
-                    }
-                }
-            }
-            if (tempFunction >= SYMBOL_NUMBER && tempFunction <= SYMBOL_EQUAL_REFERENCE) {
-                if (tempFunction == SYMBOL_NUMBER) {
-                    int8_t tempType = (tempArgumentList + 0)->type;
-                    if (tempType == VALUE_TYPE_NUMBER) {
-                        tempResult.value = tempArgumentList[0];
-                    } else if (tempType == VALUE_TYPE_STRING) {
-                        int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                        int8_t *tempString = *(int8_t **)tempPointer;
-                        tempResult.value.type = VALUE_TYPE_NUMBER;
-                        *(float *)(tempResult.value.data) = convertTextToFloat(tempString + STRING_DATA_OFFSET);
-                    } else {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_STRING) {
-                    int8_t tempType = (tempArgumentList + 0)->type;
-                    if (tempType == VALUE_TYPE_NUMBER) {
-                        volatile int16_t tempCheatSize = NUMBER_LITERAL_MAXIMUM_LENGTH + 1;
-                        uint8_t tempBuffer[tempCheatSize];
-                        convertFloatToText(tempBuffer, *(float *)((tempArgumentList + 0)->data));
-                        tempResult.value.type = VALUE_TYPE_STRING;
-                        int8_t *tempString = createString(tempBuffer);
-                        if (tempString == NULL) {
-                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                        *(int8_t **)(tempResult.value.data) = tempString;
-                    } else if (tempType == VALUE_TYPE_STRING) {
-                        tempResult.value = tempArgumentList[0];
-                    } else {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_TYPE) {
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = (tempArgumentList + 0)->type;
-                }
-                if (tempFunction == SYMBOL_LENGTH) {
-                    int8_t tempType = (tempArgumentList + 0)->type;
-                    if (tempType == VALUE_TYPE_STRING) {
-                        int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                        int8_t *tempString = *(int8_t **)tempPointer;
-                        tempResult.value.type = VALUE_TYPE_NUMBER;
-                        *(float *)(tempResult.value.data) = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
-                    } else if (tempType == VALUE_TYPE_LIST) {
-                        int8_t *tempPointer = *(int8_t **)((tempArgumentList + 0)->data);
-                        int8_t *tempList = *(int8_t **)tempPointer;
-                        tempResult.value.type = VALUE_TYPE_NUMBER;
-                        *(float *)(tempResult.value.data) = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
-                    } else {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_COPY) {
-                    int8_t tempType = (tempArgumentList + 0)->type;
-                    if (tempType == VALUE_TYPE_STRING) {
-                        int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
-                        int8_t *tempString1 = *(int8_t **)tempPointer1;
-                        int16_t tempLength = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
-                        int8_t *tempPointer2 = createEmptyString(tempLength);
-                        if (tempPointer2 == NULL) {
-                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                        int8_t *tempString2 = *(int8_t **)tempPointer2;
-                        memcpy(tempString2 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength + 1);
-                        tempResult.value.type = VALUE_TYPE_STRING;
-                        *(int8_t **)(tempResult.value.data) = tempPointer2;
-                    } else if (tempType == VALUE_TYPE_LIST) {
-                        int8_t *tempPointer1 = *(int8_t **)((tempArgumentList + 0)->data);
-                        int8_t *tempList1 = *(int8_t **)tempPointer1;
-                        int16_t tempLength = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
-                        int8_t *tempPointer2 = createEmptyList(tempLength);
-                        if (tempPointer2 == NULL) {
-                            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                        int8_t *tempList2 = *(int8_t **)tempPointer2;
-                        memcpy(tempList2 + LIST_DATA_OFFSET, tempList1 + LIST_DATA_OFFSET, tempLength * sizeof(value_t));
-                        tempResult.value.type = VALUE_TYPE_LIST;
-                        *(int8_t **)(tempResult.value.data) = tempPointer2;
-                    } else {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_INSERT) {
-                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int16_t index = *(float *)((tempArgumentList + 1)->data);
-                    int8_t tempResult2 = insertValueIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
-                    if (!tempResult2) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_REMOVE) {
-                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int16_t index = *(float *)((tempArgumentList + 1)->data);
-                    int8_t tempResult2 = removeValueFromSequence(tempArgumentList + 0, index);
-                    if (!tempResult2) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_SUBSEQUENCE) {
-                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER || (tempArgumentList + 2)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
-                    int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
-                    tempResult.value = getSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
-                    if (tempResult.value.type == VALUE_TYPE_MISSING) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_INSERT_SUBSEQUENCE) {
-                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int16_t index = *(float *)((tempArgumentList + 1)->data);
-                    int8_t tempResult2 = insertSubsequenceIntoSequence(tempArgumentList + 0, index, tempArgumentList + 2);
-                    if (!tempResult2) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_REMOVE_SUBSEQUENCE) {
-                    if ((tempArgumentList + 1)->type != VALUE_TYPE_NUMBER || (tempArgumentList + 2)->type != VALUE_TYPE_NUMBER) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    int16_t tempStartIndex = *(float *)((tempArgumentList + 1)->data);
-                    int16_t tempEndIndex = *(float *)((tempArgumentList + 2)->data);
-                    int8_t tempResult2 = removeSubsequenceFromSequence(tempArgumentList + 0, tempStartIndex, tempEndIndex);
-                    if (!tempResult2) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                }
-                if (tempFunction == SYMBOL_EQUAL_REFERENCE) {
-                    int8_t tempType1 = (tempArgumentList + 0)->type;
-                    int8_t tempType2 = (tempArgumentList + 1)->type;
-                    if ((tempType1 != VALUE_TYPE_STRING && tempType1 != VALUE_TYPE_LIST) || tempType1 != tempType2) {
-                        reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = (*(int8_t **)(tempArgumentList + 0)->data == *(int8_t **)((tempArgumentList + 1)->data));
-                }
-            }
-            if (tempShouldDisplayRunning) {
-                clearDisplay();
-                displayTextFromProgMem(0, 0, MESSAGE_RUNNING);
-            }
-        } else if (isUnaryOperator(tempSymbol)) {
-            code += 1;
-            expressionResult_t tempResult2 = evaluateExpression(code, 0, false);
-            firstTreasureTracker = &tempTreasureTracker;
-            treasureTracker_t tempTreasureTracker2;
-            initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
-            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                tempResult.status = tempResult2.status;
-                return tempResult;
-            }
-            if (tempResult2.value.type == VALUE_TYPE_MISSING) {
-                reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
-            }
-            code = tempResult2.nextCode;
-            if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                tempResult.status = EVALUATION_STATUS_QUIT;
-                return tempResult;
-            }
-            if (tempSymbol == '-') {
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)&(tempResult.value.data) = -(*(float *)&(tempResult2.value.data));
-            }
-            if (tempSymbol == '!') {
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)&(tempResult.value.data) = (*(float *)&(tempResult2.value.data) == 0.0);
-            }
-            if (tempSymbol == '~') {
-                tempResult.value.type = VALUE_TYPE_NUMBER;
-                *(float *)&(tempResult.value.data) = ~(int32_t)*(float *)&(tempResult2.value.data);
-            }
-            if (tempSymbol == SYMBOL_INCREMENT) {
-                if (tempResult2.destination == NULL) {
-                    reportError(ERROR_MESSAGE_BAD_DESTINATION, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                tempResult.destinationType = tempResult2.destinationType;
-                tempResult.destination = tempResult2.destination;
-                if (tempResult2.destinationType == DESTINATION_TYPE_VALUE) {
-                    *(float *)(((value_t *)(tempResult.destination))->data) += 1.0;
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    tempResult.value = *(value_t *)(tempResult.destination);
-                }
-                if (tempResult2.destinationType == DESTINATION_TYPE_SYMBOL) {
-                    *(uint8_t *)(tempResult.destination) += 1; 
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = *(uint8_t *)(tempResult.destination);
-                }
-            }
-            if (tempSymbol == SYMBOL_DECREMENT) {
-                if (tempResult2.destination == NULL) {
-                    reportError(ERROR_MESSAGE_BAD_DESTINATION, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                tempResult.destinationType = tempResult2.destinationType;
-                tempResult.destination = tempResult2.destination;
-                if (tempResult2.destinationType == DESTINATION_TYPE_VALUE) {
-                    *(float *)(((value_t *)(tempResult.destination))->data) -= 1.0;
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    tempResult.value = *(value_t *)(tempResult.destination);
-                }
-                if (tempResult2.destinationType == DESTINATION_TYPE_SYMBOL) {
-                    *(uint8_t *)(tempResult.destination) -= 1; 
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = *(uint8_t *)(tempResult.destination);
-                }
-            }
+            *(int8_t **)(status->result.value.data) = tempString;
+        } else if (tempType == VALUE_TYPE_STRING) {
+            status->result.value = status->argumentList[0];
         } else {
-            reportError(ERROR_MESSAGE_BAD_START_OF_EXPRESSION, tempStartCode);
-            tempResult.status = EVALUATION_STATUS_QUIT;
-            return tempResult;
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
         }
-        while (true) {
-            uint8_t tempSymbol = readStorageInt8(code);
-            if (tempSymbol == SYMBOL_INCREMENT) {
-                code += 1;
-                if (tempResult.value.type != VALUE_TYPE_NUMBER) {
-                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
+    }
+    if (status->symbol == SYMBOL_TYPE) {
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = (status->argumentList + 0)->type;
+    }
+    if (status->symbol == SYMBOL_LENGTH) {
+        int8_t tempType = (status->argumentList + 0)->type;
+        if (tempType == VALUE_TYPE_STRING) {
+            int8_t *tempPointer = *(int8_t **)((status->argumentList + 0)->data);
+            int8_t *tempString = *(int8_t **)tempPointer;
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            *(float *)(status->result.value.data) = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+        } else if (tempType == VALUE_TYPE_LIST) {
+            int8_t *tempPointer = *(int8_t **)((status->argumentList + 0)->data);
+            int8_t *tempList = *(int8_t **)tempPointer;
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            *(float *)(status->result.value.data) = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+        } else {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_COPY) {
+        int8_t tempType = (status->argumentList + 0)->type;
+        if (tempType == VALUE_TYPE_STRING) {
+            int8_t *tempPointer1 = *(int8_t **)((status->argumentList + 0)->data);
+            int8_t *tempString1 = *(int8_t **)tempPointer1;
+            int16_t tempLength = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
+            int8_t *tempPointer2 = createEmptyString(tempLength);
+            if (tempPointer2 == NULL) {
+                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            int8_t *tempString2 = *(int8_t **)tempPointer2;
+            memcpy(tempString2 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength + 1);
+            status->result.value.type = VALUE_TYPE_STRING;
+            *(int8_t **)(status->result.value.data) = tempPointer2;
+        } else if (tempType == VALUE_TYPE_LIST) {
+            int8_t *tempPointer1 = *(int8_t **)((status->argumentList + 0)->data);
+            int8_t *tempList1 = *(int8_t **)tempPointer1;
+            int16_t tempLength = *(int16_t *)(tempList1 + LIST_LENGTH_OFFSET);
+            int8_t *tempPointer2 = createEmptyList(tempLength);
+            if (tempPointer2 == NULL) {
+                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            int8_t *tempList2 = *(int8_t **)tempPointer2;
+            memcpy(tempList2 + LIST_DATA_OFFSET, tempList1 + LIST_DATA_OFFSET, tempLength * sizeof(value_t));
+            status->result.value.type = VALUE_TYPE_LIST;
+            *(int8_t **)(status->result.value.data) = tempPointer2;
+        } else {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_INSERT) {
+        if ((status->argumentList + 1)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int16_t index = *(float *)((status->argumentList + 1)->data);
+        int8_t tempResult2 = insertValueIntoSequence(status->argumentList + 0, index, status->argumentList + 2);
+        if (!tempResult2) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_REMOVE) {
+        if ((status->argumentList + 1)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int16_t index = *(float *)((status->argumentList + 1)->data);
+        int8_t tempResult2 = removeValueFromSequence(status->argumentList + 0, index);
+        if (!tempResult2) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_SUBSEQUENCE) {
+        if ((status->argumentList + 1)->type != VALUE_TYPE_NUMBER || (status->argumentList + 2)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int16_t tempStartIndex = *(float *)((status->argumentList + 1)->data);
+        int16_t tempEndIndex = *(float *)((status->argumentList + 2)->data);
+        status->result.value = getSubsequenceFromSequence(status->argumentList + 0, tempStartIndex, tempEndIndex);
+        if (status->result.value.type == VALUE_TYPE_MISSING) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_INSERT_SUBSEQUENCE) {
+        if ((status->argumentList + 1)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int16_t index = *(float *)((status->argumentList + 1)->data);
+        int8_t tempResult2 = insertSubsequenceIntoSequence(status->argumentList + 0, index, status->argumentList + 2);
+        if (!tempResult2) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_REMOVE_SUBSEQUENCE) {
+        if ((status->argumentList + 1)->type != VALUE_TYPE_NUMBER || (status->argumentList + 2)->type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        int16_t tempStartIndex = *(float *)((status->argumentList + 1)->data);
+        int16_t tempEndIndex = *(float *)((status->argumentList + 2)->data);
+        int8_t tempResult2 = removeSubsequenceFromSequence(status->argumentList + 0, tempStartIndex, tempEndIndex);
+        if (!tempResult2) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    if (status->symbol == SYMBOL_EQUAL_REFERENCE) {
+        int8_t tempType1 = (status->argumentList + 0)->type;
+        int8_t tempType2 = (status->argumentList + 1)->type;
+        if ((tempType1 != VALUE_TYPE_STRING && tempType1 != VALUE_TYPE_LIST) || tempType1 != tempType2) {
+            reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)(status->result.value.data) = (*(int8_t **)(status->argumentList + 0)->data == *(int8_t **)((status->argumentList + 1)->data));
+    }
+}
+
+static void __attribute__ ((noinline)) evaluateBinaryOperatorExpression1(expressionStatus_t *status, int8_t index, int8_t precedence) {
+    status->code += 1;
+    expressionResult_t tempResult2 = evaluateExpression(status->code, precedence, false);
+    firstTreasureTracker = &status->treasureTracker;
+    treasureTracker_t tempTreasureTracker2;
+    initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
+    if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+        status->result.status = tempResult2.status;
+        return;
+    }
+    if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+        reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+        status->result.status = EVALUATION_STATUS_QUIT;
+        return;
+    }
+    status->code = tempResult2.nextCode;
+    float tempOperand1Float = *(float *)&(status->result.value.data);
+    float tempOperand2Float = *(float *)&(tempResult2.value.data);
+    int32_t tempOperand1Int = (int32_t)tempOperand1Float;
+    int32_t tempOperand2Int = (int32_t)tempOperand2Float;
+    if (status->symbol >= SYMBOL_ADD_ASSIGN && status->symbol <= SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
+        if (status->result.destination == NULL) {
+            reportError(ERROR_MESSAGE_BAD_DESTINATION, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        } else {
+            int8_t tempType;
+            float tempNumber;
+            if (status->result.destinationType == DESTINATION_TYPE_VALUE) {
+                tempType = ((value_t *)(status->result.destination))->type;
+                if (tempType == VALUE_TYPE_NUMBER) {
+                    tempNumber = *(float *)(((value_t *)(status->result.destination))->data);
                 }
-                if (tempResult.destination == NULL) {
-                    reportError(ERROR_MESSAGE_BAD_DESTINATION, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
-                    *(float *)(((value_t *)(tempResult.destination))->data) += 1.0;
-                }
-                if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
-                    *(uint8_t *)(tempResult.destination) += 1;
-                }
-            } else if (tempSymbol == SYMBOL_DECREMENT) {
-                code += 1;
-                if (tempResult.value.type != VALUE_TYPE_NUMBER) {
-                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                if (tempResult.destination == NULL) {
-                    reportError(ERROR_MESSAGE_BAD_DESTINATION, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
-                    *(float *)(((value_t *)(tempResult.destination))->data) -= 1.0;
-                }
-                if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
-                    *(uint8_t *)(tempResult.destination) -= 1;
-                }
-            } else if (tempSymbol == '[') {
-                code += 1;
-                if (tempResult.value.type == VALUE_TYPE_MISSING) {
-                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
-                firstTreasureTracker = &tempTreasureTracker;
-                treasureTracker_t tempTreasureTracker2;
-                initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
-                if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                    tempResult.status = tempResult2.status;
-                    return tempResult;
-                }
-                if (tempResult2.value.type == VALUE_TYPE_MISSING) {
-                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                code = tempResult2.nextCode;
-                int8_t tempSymbol = readStorageInt8(code);
-                if (tempSymbol != ']') {
-                    reportError(ERROR_MESSAGE_MISSING_BRACKET, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                code += 1;
-                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
-                }
-                int16_t index = *(float *)(tempResult2.value.data);
-                if (tempResult.value.type == VALUE_TYPE_LIST) {
-                    int8_t *tempPointer = *(int8_t **)(tempResult.value.data);
-                    int8_t *tempList = *(int8_t **)tempPointer;
-                    int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
-                    if (index < 0 || index >= tempLength) {
-                        reportError(ERROR_MESSAGE_BAD_INDEX, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
+            }
+            if (status->result.destinationType == DESTINATION_TYPE_SYMBOL) {
+                tempType = VALUE_TYPE_NUMBER;
+                tempNumber = *(uint8_t *)(status->result.destination);
+            }
+            if (status->symbol == SYMBOL_ADD_ASSIGN) {
+                if (tempType == VALUE_TYPE_NUMBER) {
+                    if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
+                        reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                        status->result.status = EVALUATION_STATUS_QUIT;
+                        return;
                     }
-                    value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
-                    tempResult.destinationType = DESTINATION_TYPE_VALUE;
-                    *(value_t **)&(tempResult.destination) = tempValue;
-                    tempResult.value = *tempValue;
-                } else if (tempResult.value.type == VALUE_TYPE_STRING) {
-                    int8_t *tempPointer = *(int8_t **)(tempResult.value.data);
+                    tempNumber += tempOperand2Float;
+                } else if (tempType == VALUE_TYPE_STRING) {
+                    if (tempResult2.value.type != VALUE_TYPE_STRING) {
+                        reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                        status->result.status = EVALUATION_STATUS_QUIT;
+                        return;
+                    }
+                    int8_t *tempPointer = *(int8_t **)(((value_t *)(status->result.destination))->data);
                     int8_t *tempString = *(int8_t **)tempPointer;
                     int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
-                    if (index < 0 || index >= tempLength) {
-                        reportError(ERROR_MESSAGE_BAD_INDEX, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
+                    int8_t tempResult3 = insertSubsequenceIntoSequence((value_t *)(status->result.destination), tempLength, &(tempResult2.value));
+                    if (!tempResult3) {
+                        errorCode = status->startCode;
+                        status->result.status = EVALUATION_STATUS_QUIT;
+                        return;
                     }
-                    uint8_t *tempSymbol = tempString + STRING_DATA_OFFSET + index;
-                    tempResult.destinationType = DESTINATION_TYPE_SYMBOL;
-                    tempResult.destination = tempSymbol;
-                    tempResult.value.type = VALUE_TYPE_NUMBER;
-                    *(float *)(tempResult.value.data) = *tempSymbol;
                 } else {
-                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
+                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
                 }
-            } else if (tempSymbol == ':' || tempSymbol == ';') {
-                code += 1;
-                if (tempResult.value.type == VALUE_TYPE_MISSING) {
-                    reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
+            } else if (tempType != VALUE_TYPE_NUMBER || tempResult2.value.type != VALUE_TYPE_NUMBER) {
+                reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            if (status->symbol == SYMBOL_SUBTRACT_ASSIGN) {
+                tempNumber -= tempOperand2Float;
+            }
+            if (status->symbol == SYMBOL_MULTIPLY_ASSIGN) {
+                tempNumber *= tempOperand2Float;
+            }
+            if (status->symbol == SYMBOL_DIVIDE_ASSIGN) {
+                if (tempOperand2Float == 0.0) {
+                    reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
                 }
-                if (tempResult.value.type != VALUE_TYPE_FUNCTION) {
-                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                    tempResult.status = EVALUATION_STATUS_QUIT;
-                    return tempResult;
+                tempNumber /= tempOperand2Float;
+            }
+            if (status->symbol == SYMBOL_MODULUS_ASSIGN) {
+                if (tempOperand2Float == 0.0) {
+                    reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
                 }
-                int32_t tempCode = *(int32_t *)(tempResult.value.data);
-                treasureTracker_t tempTreasureTracker3;
-                int8_t tempArgumentAmount = getCustomFunctionArgumentAmount(tempCode);
-                int8_t *tempPreviousScope = localScope;
-                {
-                    value_t tempArgumentList[tempArgumentAmount];
-                    if (nativeStackHasCollision(100)) {
-                        reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    treasureTracker_t tempTreasureTracker2;
-                    initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE_ARRAY, tempArgumentList);
-                    int8_t index = 0;
-                    while (index < tempArgumentAmount) {
-                        expressionResult_t tempResult2 = evaluateExpression(code, 99, false);
-                        firstTreasureTracker = &tempTreasureTracker2;
-                        if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                            tempResult.status = tempResult2.status;
-                            return tempResult;
-                        }
-                        if (tempResult2.value.type == VALUE_TYPE_MISSING) {
-                            reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                        tempArgumentList[index] = tempResult2.value;
-                        tempTreasureTracker2.amount += 1;
-                        code = tempResult2.nextCode;
-                        uint8_t tempSymbol = readStorageInt8(code);
-                        if (tempSymbol == ',') {
-                            code += 1;
-                        }
-                        index += 1;
-                    }
-                    int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
-                    localScope += SCOPE_DATA_OFFSET + tempSize;
-                    *(int16_t *)(localScope + SCOPE_SIZE_OFFSET) = 0;
-                    *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET) = NULL;
-                    *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = NULL;
-                    int8_t tempSuccess = pushBranch(BRANCH_ACTION_RUN, 0);
-                    if (!tempSuccess) {
-                        errorCode = tempStartCode;
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    firstTreasureTracker = &tempTreasureTracker;
-                    initializeTreasureTracker(&tempTreasureTracker3, TREASURE_TYPE_SCOPE, localScope);
-                    tempCode += 1;
-                    index = 0;
-                    while (index < tempArgumentAmount + 1) {
-                        volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
-                        uint8_t tempBuffer[tempCheatSize];
-                        int8_t tempIndex = 0;
-                        while (true) {
-                            uint8_t tempSymbol = readStorageInt8(tempCode);
-                            if (tempSymbol == ',') {
-                                tempCode += 1;
-                                break;
-                            }
-                            if (tempSymbol == '\n' || tempSymbol == 0) {
-                                break;
-                            }
-                            tempBuffer[tempIndex] = tempSymbol;
-                            tempCode += 1;
-                            tempIndex += 1;
-                        }
-                        tempBuffer[tempIndex] = 0;
-                        if (index > 0) {
-                            value_t *tempValue = createVariable(tempBuffer);
-                            if (tempValue == NULL) {
-                                reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                                tempResult.status = EVALUATION_STATUS_QUIT;
-                                return tempResult;
-                            }
-                            *tempValue = tempArgumentList[index - 1];
-                        }
-                        index += 1;
-                    }
+                tempNumber = tempOperand1Int % tempOperand2Int;
+            }
+            if (status->symbol == SYMBOL_BOOLEAN_AND_ASSIGN) {
+                tempNumber = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
+            }
+            if (status->symbol == SYMBOL_BOOLEAN_OR_ASSIGN) {
+                tempNumber = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
+            }
+            if (status->symbol == SYMBOL_BOOLEAN_XOR_ASSIGN) {
+                tempNumber = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
+            }
+            if (status->symbol == SYMBOL_BITWISE_AND_ASSIGN) {
+                tempNumber = (tempOperand1Int & tempOperand2Int);
+            }
+            if (status->symbol == SYMBOL_BITWISE_OR_ASSIGN) {
+                tempNumber = (tempOperand1Int | tempOperand2Int);
+            }
+            if (status->symbol == SYMBOL_BITWISE_XOR_ASSIGN) {
+                tempNumber = (tempOperand1Int ^ tempOperand2Int);
+            }
+            if (status->symbol == SYMBOL_BITSHIFT_LEFT_ASSIGN) {
+                tempNumber = (tempOperand1Int << tempOperand2Int);
+            }
+            if (status->symbol == SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
+                tempNumber = (tempOperand1Int >> tempOperand2Int);
+            }
+            if (tempType == VALUE_TYPE_NUMBER) {
+                if (status->result.destinationType == DESTINATION_TYPE_VALUE) {
+                    *(float *)(((value_t *)(status->result.destination))->data) = tempNumber;
                 }
-                expressionResult_t tempResult2 = runCode(tempCode);
-                firstTreasureTracker = &tempTreasureTracker3;
+                if (status->result.destinationType == DESTINATION_TYPE_SYMBOL) {
+                    *(uint8_t *)(status->result.destination) = tempNumber;
+                }
+            }
+        }
+    } else {
+        if (status->symbol != '=') {
+            if (status->result.value.type == VALUE_TYPE_MISSING) {
+                reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+        }
+        if (status->symbol == '+') {
+            if (status->result.value.type == VALUE_TYPE_NUMBER) {
+                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
+                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                *(float *)&(status->result.value.data) += tempOperand2Float;
+            } else if (status->result.value.type == VALUE_TYPE_STRING) {
+                if (tempResult2.value.type != VALUE_TYPE_STRING) {
+                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                int8_t *tempPointer1 = *(int8_t **)(status->result.value.data);
+                int8_t *tempPointer2 = *(int8_t **)(tempResult2.value.data);
+                int8_t *tempString1 = *(int8_t **)tempPointer1;
+                int8_t *tempString2 = *(int8_t **)tempPointer2;
+                int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
+                int16_t tempLength2 = *(int16_t *)(tempString2 + STRING_LENGTH_OFFSET);
+                int8_t *tempPointer3 = createEmptyString(tempLength1 + tempLength2);
+                if (tempPointer3 == NULL) {
+                    reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                int8_t *tempString3 = *(int8_t **)tempPointer3;
+                memcpy(tempString3 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength1);
+                memcpy(tempString3 + STRING_DATA_OFFSET + tempLength1, tempString2 + STRING_DATA_OFFSET, tempLength2 + 1);
+                *(int8_t **)&(status->result.value.data) = tempPointer3;
+            } else {
+                reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+        } else if (status->symbol == SYMBOL_EQUAL) {
+            if (status->result.value.type == VALUE_TYPE_NUMBER) {
+                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
+                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                *(float *)&(status->result.value.data) = (tempOperand1Float == tempOperand2Float);
+            } else if (status->result.value.type == VALUE_TYPE_STRING) {
+                if (tempResult2.value.type != VALUE_TYPE_STRING) {
+                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                int8_t *tempPointer1 = *(int8_t **)(status->result.value.data);
+                int8_t *tempPointer2 = *(int8_t **)(tempResult2.value.data);
+                status->result.value.type = VALUE_TYPE_NUMBER;
+                *(float *)&(status->result.value.data) = stringsAreEqual(tempPointer1, tempPointer2);
+            } else {
+                reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+        } else if (status->symbol == SYMBOL_NOT_EQUAL) {
+            if (status->result.value.type == VALUE_TYPE_NUMBER) {
+                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
+                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                *(float *)&(status->result.value.data) = (tempOperand1Float != tempOperand2Float);
+            } else if (status->result.value.type == VALUE_TYPE_STRING) {
+                if (tempResult2.value.type != VALUE_TYPE_STRING) {
+                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                int8_t *tempPointer1 = *(int8_t **)(status->result.value.data);
+                int8_t *tempPointer2 = *(int8_t **)(tempResult2.value.data);
+                status->result.value.type = VALUE_TYPE_NUMBER;
+                *(float *)&(status->result.value.data) = !stringsAreEqual(tempPointer1, tempPointer2);
+            } else {
+                reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+        } else if (status->symbol == '=') {
+            if (status->result.destination == NULL) {
+                volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
+                uint8_t tempBuffer[tempCheatSize];
+                int32_t tempCode = readStorageVariableName(tempBuffer, status->startCode);
+                if (tempCode < 0) {
+                    errorCode = status->startCode;
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                status->result.destinationType = DESTINATION_TYPE_VALUE;
+                value_t *tempValue = createVariable(tempBuffer);
+                if (tempValue == NULL) {
+                    reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                *(value_t **)&(status->result.destination) = tempValue;
+            }
+            if (status->result.destinationType == DESTINATION_TYPE_VALUE) {
+                *(value_t *)(status->result.destination) = tempResult2.value;
+            }
+            if (status->result.destinationType == DESTINATION_TYPE_SYMBOL) {
+                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
+                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return;
+                }
+                *(uint8_t *)(status->result.destination) = *(float *)(tempResult2.value.data);
+            }
+        } else if (status->result.value.type != VALUE_TYPE_NUMBER || tempResult2.value.type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        if (status->symbol == '-') {
+            *(float *)&(status->result.value.data) -= tempOperand2Float;
+        }
+        if (status->symbol == '*') {
+            *(float *)&(status->result.value.data) *= tempOperand2Float;
+        }
+        if (status->symbol == '/') {
+            if (tempOperand2Float == 0.0) {
+                reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            *(float *)&(status->result.value.data) /= tempOperand2Float;
+        }
+        if (status->symbol == '%') {
+            if (tempOperand2Int == 0) {
+                reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            *(float *)&(status->result.value.data) = tempOperand1Int % tempOperand2Int;
+        }
+        if (status->symbol == SYMBOL_BOOLEAN_AND) {
+            *(float *)&(status->result.value.data) = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
+        }
+        if (status->symbol == SYMBOL_BOOLEAN_OR) {
+            *(float *)&(status->result.value.data) = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
+        }
+        if (status->symbol == SYMBOL_BOOLEAN_XOR) {
+            *(float *)&(status->result.value.data) = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
+        }
+        if (status->symbol == '&') {
+            *(float *)&(status->result.value.data) = (tempOperand1Int & tempOperand2Int);
+        }
+        if (status->symbol == '|') {
+            *(float *)&(status->result.value.data) = (tempOperand1Int | tempOperand2Int);
+        }
+        if (status->symbol == '^') {
+            *(float *)&(status->result.value.data) = (tempOperand1Int ^ tempOperand2Int);
+        }
+        if (status->symbol == SYMBOL_BITSHIFT_LEFT) {
+            *(float *)&(status->result.value.data) = (tempOperand1Int << tempOperand2Int);
+        }
+        if (status->symbol == SYMBOL_BITSHIFT_RIGHT) {
+            *(float *)&(status->result.value.data) = (tempOperand1Int >> tempOperand2Int);
+        }
+        if (status->symbol == '>') {
+            *(float *)&(status->result.value.data) = tempOperand1Float > tempOperand2Float;
+        }
+        if (status->symbol == '<') {
+            *(float *)&(status->result.value.data) = tempOperand1Float < tempOperand2Float;
+        }
+        if (status->symbol == SYMBOL_GREATER_OR_EQUAL) {
+            *(float *)&(status->result.value.data) = tempOperand1Float >= tempOperand2Float;
+        }
+        if (status->symbol == SYMBOL_LESS_OR_EQUAL) {
+            *(float *)&(status->result.value.data) = tempOperand1Float <= tempOperand2Float;
+        }
+    }
+}
+
+static void __attribute__ ((noinline)) evaluateUnaryOperatorExpression(expressionStatus_t *status) {
+    status->code += 1;
+    expressionResult_t tempResult2 = evaluateExpression(status->code, 0, false);
+    firstTreasureTracker = &status->treasureTracker;
+    treasureTracker_t tempTreasureTracker2;
+    initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
+    if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+        status->result.status = tempResult2.status;
+        return;
+    }
+    if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+        reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+        status->result.status = EVALUATION_STATUS_QUIT;
+        return;
+    }
+    status->code = tempResult2.nextCode;
+    if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
+        reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+        status->result.status = EVALUATION_STATUS_QUIT;
+        return;
+    }
+    if (status->symbol == '-') {
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)&(status->result.value.data) = -(*(float *)&(tempResult2.value.data));
+    }
+    if (status->symbol == '!') {
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)&(status->result.value.data) = (*(float *)&(tempResult2.value.data) == 0.0);
+    }
+    if (status->symbol == '~') {
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)&(status->result.value.data) = ~(int32_t)*(float *)&(tempResult2.value.data);
+    }
+    if (status->symbol == SYMBOL_INCREMENT) {
+        if (tempResult2.destination == NULL) {
+            reportError(ERROR_MESSAGE_BAD_DESTINATION, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        status->result.destinationType = tempResult2.destinationType;
+        status->result.destination = tempResult2.destination;
+        if (tempResult2.destinationType == DESTINATION_TYPE_VALUE) {
+            *(float *)(((value_t *)(status->result.destination))->data) += 1.0;
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            status->result.value = *(value_t *)(status->result.destination);
+        }
+        if (tempResult2.destinationType == DESTINATION_TYPE_SYMBOL) {
+            *(uint8_t *)(status->result.destination) += 1; 
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            *(float *)(status->result.value.data) = *(uint8_t *)(status->result.destination);
+        }
+    }
+    if (status->symbol == SYMBOL_DECREMENT) {
+        if (tempResult2.destination == NULL) {
+            reportError(ERROR_MESSAGE_BAD_DESTINATION, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        status->result.destinationType = tempResult2.destinationType;
+        status->result.destination = tempResult2.destination;
+        if (tempResult2.destinationType == DESTINATION_TYPE_VALUE) {
+            *(float *)(((value_t *)(status->result.destination))->data) -= 1.0;
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            status->result.value = *(value_t *)(status->result.destination);
+        }
+        if (tempResult2.destinationType == DESTINATION_TYPE_SYMBOL) {
+            *(uint8_t *)(status->result.destination) -= 1; 
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            *(float *)(status->result.value.data) = *(uint8_t *)(status->result.destination);
+        }
+    }
+}
+
+static int8_t __attribute__ ((noinline)) evaluateLiteralExpression(expressionStatus_t *status) {
+    if ((status->symbol >= '0' && status->symbol <= '9') || status->symbol == '.') {
+        volatile int16_t tempCheatSize = NUMBER_LITERAL_MAXIMUM_LENGTH + 1;
+        uint8_t tempBuffer[tempCheatSize];
+        tempBuffer[0] = status->symbol;
+        status->code += 1;
+        uint8_t tempLastSymbol = 0;
+        int8_t index = 1;
+        while (true) {
+            if (index >= NUMBER_LITERAL_MAXIMUM_LENGTH) {
+                reportError(ERROR_MESSAGE_NUMBER_LITERAL_TOO_LONG, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return true;
+            }
+            int8_t tempSymbol = readStorageInt8(status->code);
+            if (!((tempSymbol >= '0' && tempSymbol <= '9') || tempSymbol == '.' || tempSymbol == 'e'
+                    || (tempSymbol == '-' && tempLastSymbol == 'e'))) {
+                tempBuffer[index] = 0;
+                break;
+            }
+            tempBuffer[index] = tempSymbol;
+            tempLastSymbol = tempSymbol;
+            status->code += 1;
+            index += 1;
+        }
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        float tempNumber = convertTextToFloat(tempBuffer);
+        *(float *)(status->result.value.data) = tempNumber;
+    } else if ((status->symbol >= 'A' && status->symbol <= 'Z') || status->symbol == '_') {
+        volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
+        uint8_t tempBuffer[tempCheatSize];
+        status->code = readStorageVariableName(tempBuffer, status->code);
+        if (status->code < 0) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        status->result.destinationType = DESTINATION_TYPE_VALUE;
+        status->result.destination = (int8_t *)findVariableValueByName(tempBuffer);
+        if (status->result.destination != NULL) {
+            status->result.value = *(value_t *)(status->result.destination);
+        }
+    } else if (status->symbol == '\'') {
+        status->code += 1;
+        uint8_t tempSymbol = readStorageInt8(status->code);
+        status->code += 1;
+        if (tempSymbol == '\\') {
+            tempSymbol = readStorageInt8(status->code);
+            status->code += 1;
+            if (tempSymbol == 'N') {
+                tempSymbol = '\n';
+            }
+        }
+        int8_t tempSymbol2 = readStorageInt8(status->code);
+        if (tempSymbol2 != '\'') {
+            reportError(ERROR_MESSAGE_MISSING_APOSTROPHE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        status->code += 1;
+        status->result.value.type = VALUE_TYPE_NUMBER;
+        *(float *)&(status->result.value.data) = tempSymbol;
+    } else if (status->symbol == '"') {
+        status->code += 1;
+        int16_t tempLength = getStringLiteralLength(status->code);
+        int8_t *tempString = createEmptyString(tempLength);
+        if (tempString == NULL) {
+            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        int8_t *tempStringContents = *(int8_t **)tempString;
+        int16_t index = 0;
+        int8_t tempIsEscaped = false;
+        while (true) {
+            uint8_t tempSymbol = readStorageInt8(status->code);
+            if (tempSymbol == 0) {
+                reportError(ERROR_MESSAGE_MISSING_QUOTATION_MARK, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return true;
+            }
+            if (tempIsEscaped) {
+                if (tempSymbol == 'N') {
+                    *(tempStringContents + STRING_DATA_OFFSET + index) = '\n';
+                } else {
+                    *(tempStringContents + STRING_DATA_OFFSET + index) = tempSymbol;
+                }
+                index += 1;
+                tempIsEscaped = false;
+            } else {
+                if (tempSymbol == '\\') {
+                    tempIsEscaped = true;
+                } else if (tempSymbol == '"') {
+                    status->code += 1;
+                    break;
+                } else {
+                    *(tempStringContents + STRING_DATA_OFFSET + index) = tempSymbol;
+                    index += 1;
+                }
+            }
+            status->code += 1;
+        }
+        *(tempStringContents + STRING_DATA_OFFSET + index) = 0;
+        status->result.value.type = VALUE_TYPE_STRING;
+        *(int8_t **)(status->result.value.data) = tempString;
+    } else if (status->symbol == '[') {
+        status->code += 1;
+        int8_t *tempList = createEmptyList(0);
+        if (tempList == NULL) {
+            reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        int16_t index = 0;
+        status->result.value.type = VALUE_TYPE_LIST;
+        *(int8_t **)(status->result.value.data) = tempList;
+        while (true) {
+            uint8_t tempSymbol = readStorageInt8(status->code);
+            if (tempSymbol == '\n' || tempSymbol == 0) {
+                reportError(ERROR_MESSAGE_MISSING_BRACKET, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return true;
+            }
+            if (tempSymbol == ']') {
+                status->code += 1;
+                break;
+            }
+            if (tempSymbol == ',') {
+                status->code += 1;
+            }
+            expressionResult_t tempResult2 = evaluateExpression(status->code, 99, false);
+            // Treasure does not need to be tracked because it will
+            // be immediately inserted into the tracked list.
+            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                status->result.status = tempResult2.status;
+                return true;
+            }
+            if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+                reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return true;
+            }
+            status->code = tempResult2.nextCode;
+            int8_t tempSuccess = insertListValue(tempList, index, &(tempResult2.value));
+            if (!tempSuccess) {
+                errorCode = status->startCode;
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return true;
+            }
+            index += 1;
+        }
+    } else {
+        return false;
+    }
+    return true;
+}
+
+static int8_t __attribute__ ((noinline)) evaluateBinaryOperatorExpression2(expressionStatus_t *status) {
+    if (status->symbol == SYMBOL_INCREMENT) {
+        status->code += 1;
+        if (status->result.value.type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        if (status->result.destination == NULL) {
+            reportError(ERROR_MESSAGE_BAD_DESTINATION, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        if (status->result.destinationType == DESTINATION_TYPE_VALUE) {
+            *(float *)(((value_t *)(status->result.destination))->data) += 1.0;
+        }
+        if (status->result.destinationType == DESTINATION_TYPE_SYMBOL) {
+            *(uint8_t *)(status->result.destination) += 1;
+        }
+    } else if (status->symbol == SYMBOL_DECREMENT) {
+        status->code += 1;
+        if (status->result.value.type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        if (status->result.destination == NULL) {
+            reportError(ERROR_MESSAGE_BAD_DESTINATION, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        if (status->result.destinationType == DESTINATION_TYPE_VALUE) {
+            *(float *)(((value_t *)(status->result.destination))->data) -= 1.0;
+        }
+        if (status->result.destinationType == DESTINATION_TYPE_SYMBOL) {
+            *(uint8_t *)(status->result.destination) -= 1;
+        }
+    } else if (status->symbol == '[') {
+        status->code += 1;
+        if (status->result.value.type == VALUE_TYPE_MISSING) {
+            reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        expressionResult_t tempResult2 = evaluateExpression(status->code, 99, false);
+        firstTreasureTracker = &status->treasureTracker;
+        treasureTracker_t tempTreasureTracker2;
+        initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
+        if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+            status->result.status = tempResult2.status;
+            return true;
+        }
+        if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+            reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        status->code = tempResult2.nextCode;
+        int8_t tempSymbol = readStorageInt8(status->code);
+        if (tempSymbol != ']') {
+            reportError(ERROR_MESSAGE_MISSING_BRACKET, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        status->code += 1;
+        if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
+            reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        int16_t index = *(float *)(tempResult2.value.data);
+        if (status->result.value.type == VALUE_TYPE_LIST) {
+            int8_t *tempPointer = *(int8_t **)(status->result.value.data);
+            int8_t *tempList = *(int8_t **)tempPointer;
+            int16_t tempLength = *(int16_t *)(tempList + LIST_LENGTH_OFFSET);
+            if (index < 0 || index >= tempLength) {
+                reportError(ERROR_MESSAGE_BAD_INDEX, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return true;
+            }
+            value_t *tempValue = (value_t *)(tempList + LIST_DATA_OFFSET + index * sizeof(value_t));
+            status->result.destinationType = DESTINATION_TYPE_VALUE;
+            *(value_t **)&(status->result.destination) = tempValue;
+            status->result.value = *tempValue;
+        } else if (status->result.value.type == VALUE_TYPE_STRING) {
+            int8_t *tempPointer = *(int8_t **)(status->result.value.data);
+            int8_t *tempString = *(int8_t **)tempPointer;
+            int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
+            if (index < 0 || index >= tempLength) {
+                reportError(ERROR_MESSAGE_BAD_INDEX, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return true;
+            }
+            uint8_t *tempSymbol = tempString + STRING_DATA_OFFSET + index;
+            status->result.destinationType = DESTINATION_TYPE_SYMBOL;
+            status->result.destination = tempSymbol;
+            status->result.value.type = VALUE_TYPE_NUMBER;
+            *(float *)(status->result.value.data) = *tempSymbol;
+        } else {
+            reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+    } else if (status->symbol == ':' || status->symbol == ';') {
+        status->code += 1;
+        if (status->result.value.type == VALUE_TYPE_MISSING) {
+            reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        if (status->result.value.type != VALUE_TYPE_FUNCTION) {
+            reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return true;
+        }
+        int32_t tempCode = *(int32_t *)(status->result.value.data);
+        treasureTracker_t tempTreasureTracker3;
+        int8_t tempArgumentAmount = getCustomFunctionArgumentAmount(tempCode);
+        int8_t *tempPreviousScope = localScope;
+        {
+            value_t tempArgumentList[tempArgumentAmount];
+            status->argumentList = tempArgumentList;
+            if (nativeStackHasCollision(100)) {
+                reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return true;
+            }
+            treasureTracker_t tempTreasureTracker2;
+            initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE_ARRAY, status->argumentList);
+            int8_t index = 0;
+            while (index < tempArgumentAmount) {
+                expressionResult_t tempResult2 = evaluateExpression(status->code, 99, false);
+                firstTreasureTracker = &tempTreasureTracker2;
                 if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                    tempResult.status = tempResult2.status;
-                    return tempResult;
+                    status->result.status = tempResult2.status;
+                    return true;
                 }
-                localScope = tempPreviousScope;
-                tempResult.value = tempResult2.value;
+                if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+                    reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+                    status->result.status = EVALUATION_STATUS_QUIT;
+                    return true;
+                }
+                status->argumentList[index] = tempResult2.value;
+                tempTreasureTracker2.amount += 1;
+                status->code = tempResult2.nextCode;
+                uint8_t tempSymbol = readStorageInt8(status->code);
+                if (tempSymbol == ',') {
+                    status->code += 1;
+                }
+                index += 1;
+            }
+            int16_t tempSize = *(int16_t *)(localScope + SCOPE_SIZE_OFFSET);
+            localScope += SCOPE_DATA_OFFSET + tempSize;
+            *(int16_t *)(localScope + SCOPE_SIZE_OFFSET) = 0;
+            *(int8_t **)(localScope + SCOPE_VARIABLE_OFFSET) = NULL;
+            *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET) = NULL;
+            int8_t tempSuccess = pushBranch(BRANCH_ACTION_RUN, 0);
+            if (!tempSuccess) {
+                errorCode = status->startCode;
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return true;
+            }
+            firstTreasureTracker = &status->treasureTracker;
+            initializeTreasureTracker(&tempTreasureTracker3, TREASURE_TYPE_SCOPE, localScope);
+            tempCode += 1;
+            index = 0;
+            while (index < tempArgumentAmount + 1) {
+                volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
+                uint8_t tempBuffer[tempCheatSize];
+                int8_t tempIndex = 0;
+                while (true) {
+                    uint8_t tempSymbol = readStorageInt8(tempCode);
+                    if (tempSymbol == ',') {
+                        tempCode += 1;
+                        break;
+                    }
+                    if (tempSymbol == '\n' || tempSymbol == 0) {
+                        break;
+                    }
+                    tempBuffer[tempIndex] = tempSymbol;
+                    tempCode += 1;
+                    tempIndex += 1;
+                }
+                tempBuffer[tempIndex] = 0;
+                if (index > 0) {
+                    value_t *tempValue = createVariable(tempBuffer);
+                    if (tempValue == NULL) {
+                        reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, status->startCode);
+                        status->result.status = EVALUATION_STATUS_QUIT;
+                        return true;
+                    }
+                    *tempValue = status->argumentList[index - 1];
+                }
+                index += 1;
+            }
+        }
+        expressionResult_t tempResult2 = runCode(tempCode);
+        firstTreasureTracker = &tempTreasureTracker3;
+        if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+            status->result.status = tempResult2.status;
+            return true;
+        }
+        localScope = tempPreviousScope;
+        status->result.value = tempResult2.value;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+static void __attribute__ ((noinline)) evaluateFunction(expressionStatus_t *status, int8_t isTopLevel) {
+    status->code += 1;
+    int8_t tempArgumentAmount = pgm_read_byte(FUNCTION_ARGUMENT_AMOUNT_LIST + (status->symbol - FIRST_FUNCTION_SYMBOL));
+    if (tempArgumentAmount < 0) {
+        tempArgumentAmount = getCustomFunctionArgumentAmount(status->startCode) + 1;
+    }
+    value_t tempArgumentList[tempArgumentAmount];
+    int32_t tempExpressionList[tempArgumentAmount];
+    status->argumentList = tempArgumentList;
+    status->expressionList = tempExpressionList;
+    if (nativeStackHasCollision(100)) {
+        reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, status->startCode);
+        status->result.status = EVALUATION_STATUS_QUIT;
+        return;
+    }
+    treasureTracker_t tempTreasureTracker2;
+    initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE_ARRAY, status->argumentList);
+    int8_t index = 0;
+    while (index < tempArgumentAmount) {
+        status->expressionList[index] = status->code;
+        expressionResult_t tempResult2 = evaluateExpression(status->code, 99, false);
+        firstTreasureTracker = &tempTreasureTracker2;
+        if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+            status->result.status = tempResult2.status;
+            return;
+        }
+        if (tempResult2.value.type == VALUE_TYPE_MISSING && status->symbol != SYMBOL_FUNCTION) {
+            reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        status->argumentList[index] = tempResult2.value;
+        tempTreasureTracker2.amount += 1;
+        status->code = tempResult2.nextCode;
+        if (index < tempArgumentAmount - 1) {
+            int8_t tempSymbol = readStorageInt8(status->code);
+            if (tempSymbol != ',') {
+                reportError(ERROR_MESSAGE_MISSING_COMMA, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            status->code += 1;
+        }
+        index += 1;
+    }
+    // Control functions.
+    if (status->symbol >= SYMBOL_IF && status->symbol <= SYMBOL_QUIT) {
+        if (!isTopLevel) {
+            reportError(ERROR_MESSAGE_NOT_TOP_LEVEL, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+        evaluateControlFunction(status);
+        if (status->result.status != EVALUATION_STATUS_NORMAL) {
+            return;
+        }
+    }
+    // Math functions.
+    if (status->symbol >= SYMBOL_RANDOM && status->symbol <= SYMBOL_LOG) {
+        evaluateMathFunction(status);
+        if (status->result.status != EVALUATION_STATUS_NORMAL) {
+            return;
+        }
+    }
+    if (status->symbol >= SYMBOL_PRINT && status->symbol <= SYMBOL_FILE_IMPORT) {
+        evaluateInputOutputFunction(status);
+        if (status->result.status != EVALUATION_STATUS_NORMAL) {
+            return;
+        }
+    }
+    if (status->symbol >= SYMBOL_NUMBER && status->symbol <= SYMBOL_EQUAL_REFERENCE) {
+        evaluateValueFunction(status);
+        if (status->result.status != EVALUATION_STATUS_NORMAL) {
+            return;
+        }
+    }
+}
+
+static void __attribute__ ((noinline)) evaluateIgnoredExpression(expressionStatus_t *status) {
+    if (status->symbol == SYMBOL_IF || status->symbol == SYMBOL_WHILE || status->symbol == SYMBOL_FUNCTION) {
+        int8_t tempSuccess = pushBranch(BRANCH_ACTION_IGNORE_HARD, 0);
+        if (!tempSuccess) {
+            errorCode = status->startCode;
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    } else if (status->symbol == SYMBOL_ELSE_IF) {
+        if (status->branch->action == BRANCH_ACTION_IGNORE_SOFT) {
+            status->branch->action = BRANCH_ACTION_RUN;
+            expressionResult_t tempResult2 = evaluateExpression(status->code + 1, 99, false);
+            status->branch->action = BRANCH_ACTION_IGNORE_SOFT;
+            firstTreasureTracker = &status->treasureTracker;
+            treasureTracker_t tempTreasureTracker2;
+            initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
+            if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+                status->result.status = tempResult2.status;
+                return;
+            }
+            status->code = tempResult2.nextCode;
+            if (tempResult2.value.type == VALUE_TYPE_MISSING) {
+                reportError(ERROR_MESSAGE_MISSING_VALUE, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
+                reportError(ERROR_MESSAGE_BAD_ARGUMENT_TYPE, status->startCode);
+                status->result.status = EVALUATION_STATUS_QUIT;
+                return;
+            }
+            if (*(float *)(tempResult2.value.data) != 0.0) {
+                status->branch->action = BRANCH_ACTION_RUN;
+            }
+        }
+    } else if (status->symbol == SYMBOL_ELSE) {
+        if (status->branch->action == BRANCH_ACTION_IGNORE_SOFT) {
+            status->branch->action = BRANCH_ACTION_RUN;
+        }
+    } else if (status->symbol == SYMBOL_END) {
+        int8_t tempSuccess = popBranch();
+        if (!tempSuccess) {
+            reportError(ERROR_MESSAGE_BAD_END_STATEMENT, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return;
+        }
+    }
+    status->code = skipStorageLine(status->code);
+}
+
+static void __attribute__ ((noinline)) evaluateParenthesisExpression(expressionStatus_t *status) {
+    status->code += 1;
+    expressionResult_t tempResult2 = evaluateExpression(status->code, 99, false);
+    firstTreasureTracker = &status->treasureTracker;
+    treasureTracker_t tempTreasureTracker2;
+    initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
+    if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
+        status->result.status = tempResult2.status;
+        return;
+    }
+    status->code = tempResult2.nextCode;
+    status->result.destinationType = tempResult2.destinationType;
+    status->result.destination = tempResult2.destination;
+    status->result.value = tempResult2.value;
+    int8_t tempSymbol = readStorageInt8(status->code);
+    if (tempSymbol != ')') {
+        reportError(ERROR_MESSAGE_MISSING_PARENTHESIS, status->startCode);
+        status->result.status = EVALUATION_STATUS_QUIT;
+        return;
+    }
+    status->code += 1;
+}
+
+static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, int8_t isTopLevel) {
+    expressionStatus_t tempStatus;
+    expressionStatus_t *status = &tempStatus;
+    status->branch = *(branch_t **)(localScope + SCOPE_BRANCH_OFFSET);
+    status->code = code;
+    status->startCode = code;
+    status->symbol = readStorageInt8(status->code);
+    status->result.status = EVALUATION_STATUS_NORMAL;
+    status->result.destination = NULL;
+    status->result.value.type = VALUE_TYPE_MISSING;
+    if (nativeStackHasCollision(100)) {
+        reportError(ERROR_MESSAGE_EXPRESSION_TOO_COMPLEX, status->startCode);
+        status->result.status = EVALUATION_STATUS_QUIT;
+        return status->result;
+    }
+    initializeTreasureTracker(&(status->treasureTracker), TREASURE_TYPE_VALUE, &(status->result.value));
+    if (status->branch->action == BRANCH_ACTION_IGNORE_SOFT || status->branch->action == BRANCH_ACTION_IGNORE_HARD) {
+        evaluateIgnoredExpression(status);
+        if (status->result.status != EVALUATION_STATUS_NORMAL) {
+            return status->result;
+        }
+    } else {
+        int8_t tempResult = evaluateLiteralExpression(status);
+        if (status->result.status != EVALUATION_STATUS_NORMAL) {
+            return status->result;
+        }
+        if (tempResult) {
+            // Do nothing.
+        }  else if (status->symbol == '(') {
+            evaluateParenthesisExpression(status);
+            if (status->result.status != EVALUATION_STATUS_NORMAL) {
+                return status->result;
+            }
+        } else if (status->symbol >= FIRST_FUNCTION_SYMBOL && status->symbol <= LAST_FUNCTION_SYMBOL) {
+            evaluateFunction(status, isTopLevel);
+            if (status->result.status != EVALUATION_STATUS_NORMAL) {
+                return status->result;
+            }
+        } else if (isUnaryOperator(status->symbol)) {
+            evaluateUnaryOperatorExpression(status);
+            if (status->result.status != EVALUATION_STATUS_NORMAL) {
+                return status->result;
+            }
+        } else {
+            reportError(ERROR_MESSAGE_BAD_START_OF_EXPRESSION, status->startCode);
+            status->result.status = EVALUATION_STATUS_QUIT;
+            return status->result;
+        }
+        while (true) {
+            status->symbol = readStorageInt8(status->code);
+            int8_t tempResult = evaluateBinaryOperatorExpression2(status);
+            if (status->result.status != EVALUATION_STATUS_NORMAL) {
+                return status->result;
+            }
+            if (tempResult) {
+                // Do nothing.
             } else {
                 int8_t tempHasFoundOperator = false;
                 int8_t index = 0;
                 while (index < sizeof(BINARY_OPERATOR_LIST)) {
                     uint8_t tempSymbol2 = pgm_read_byte(BINARY_OPERATOR_LIST + index);
-                    if (tempSymbol == tempSymbol2) {
+                    if (status->symbol == tempSymbol2) {
                         tempHasFoundOperator = true;
                         break;
                     }
@@ -3638,323 +4038,19 @@ static expressionResult_t evaluateExpression(int32_t code, int8_t precedence, in
                     if (tempPrecedence >= precedence) {
                         break;
                     }
-                    code += 1;
-                    expressionResult_t tempResult2 = evaluateExpression(code, tempPrecedence, false);
-                    firstTreasureTracker = &tempTreasureTracker;
-                    treasureTracker_t tempTreasureTracker2;
-                    initializeTreasureTracker(&tempTreasureTracker2, TREASURE_TYPE_VALUE, &(tempResult2.value));
-                    if (tempResult2.status != EVALUATION_STATUS_NORMAL) {
-                        tempResult.status = tempResult2.status;
-                        return tempResult;
-                    }
-                    if (tempResult2.value.type == VALUE_TYPE_MISSING) {
-                        reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                        tempResult.status = EVALUATION_STATUS_QUIT;
-                        return tempResult;
-                    }
-                    code = tempResult2.nextCode;
-                    float tempOperand1Float = *(float *)&(tempResult.value.data);
-                    float tempOperand2Float = *(float *)&(tempResult2.value.data);
-                    int32_t tempOperand1Int = (int32_t)tempOperand1Float;
-                    int32_t tempOperand2Int = (int32_t)tempOperand2Float;
-                    if (tempSymbol >= SYMBOL_ADD_ASSIGN && tempSymbol <= SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
-                        if (tempResult.destination == NULL) {
-                            reportError(ERROR_MESSAGE_BAD_DESTINATION, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        } else {
-                            int8_t tempType;
-                            float tempNumber;
-                            if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
-                                tempType = ((value_t *)(tempResult.destination))->type;
-                                if (tempType == VALUE_TYPE_NUMBER) {
-                                    tempNumber = *(float *)(((value_t *)(tempResult.destination))->data);
-                                }
-                            }
-                            if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
-                                tempType = VALUE_TYPE_NUMBER;
-                                tempNumber = *(uint8_t *)(tempResult.destination);
-                            }
-                            if (tempSymbol == SYMBOL_ADD_ASSIGN) {
-                                if (tempType == VALUE_TYPE_NUMBER) {
-                                    if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                                        reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                        tempResult.status = EVALUATION_STATUS_QUIT;
-                                        return tempResult;
-                                    }
-                                    tempNumber += tempOperand2Float;
-                                } else if (tempType == VALUE_TYPE_STRING) {
-                                    if (tempResult2.value.type != VALUE_TYPE_STRING) {
-                                        reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                        tempResult.status = EVALUATION_STATUS_QUIT;
-                                        return tempResult;
-                                    }
-                                    int8_t *tempPointer = *(int8_t **)(((value_t *)(tempResult.destination))->data);
-                                    int8_t *tempString = *(int8_t **)tempPointer;
-                                    int16_t tempLength = *(int16_t *)(tempString + STRING_LENGTH_OFFSET);
-                                    int8_t tempResult3 = insertSubsequenceIntoSequence((value_t *)(tempResult.destination), tempLength, &(tempResult2.value));
-                                    if (!tempResult3) {
-                                        errorCode = tempStartCode;
-                                        tempResult.status = EVALUATION_STATUS_QUIT;
-                                        return tempResult;
-                                    }
-                                } else {
-                                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                            } else if (tempType != VALUE_TYPE_NUMBER || tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                                reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                tempResult.status = EVALUATION_STATUS_QUIT;
-                                return tempResult;
-                            }
-                            if (tempSymbol == SYMBOL_SUBTRACT_ASSIGN) {
-                                tempNumber -= tempOperand2Float;
-                            }
-                            if (tempSymbol == SYMBOL_MULTIPLY_ASSIGN) {
-                                tempNumber *= tempOperand2Float;
-                            }
-                            if (tempSymbol == SYMBOL_DIVIDE_ASSIGN) {
-                                if (tempOperand2Float == 0.0) {
-                                    reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                tempNumber /= tempOperand2Float;
-                            }
-                            if (tempSymbol == SYMBOL_MODULUS_ASSIGN) {
-                                if (tempOperand2Float == 0.0) {
-                                    reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                tempNumber = tempOperand1Int % tempOperand2Int;
-                            }
-                            if (tempSymbol == SYMBOL_BOOLEAN_AND_ASSIGN) {
-                                tempNumber = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
-                            }
-                            if (tempSymbol == SYMBOL_BOOLEAN_OR_ASSIGN) {
-                                tempNumber = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
-                            }
-                            if (tempSymbol == SYMBOL_BOOLEAN_XOR_ASSIGN) {
-                                tempNumber = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
-                            }
-                            if (tempSymbol == SYMBOL_BITWISE_AND_ASSIGN) {
-                                tempNumber = (tempOperand1Int & tempOperand2Int);
-                            }
-                            if (tempSymbol == SYMBOL_BITWISE_OR_ASSIGN) {
-                                tempNumber = (tempOperand1Int | tempOperand2Int);
-                            }
-                            if (tempSymbol == SYMBOL_BITWISE_XOR_ASSIGN) {
-                                tempNumber = (tempOperand1Int ^ tempOperand2Int);
-                            }
-                            if (tempSymbol == SYMBOL_BITSHIFT_LEFT_ASSIGN) {
-                                tempNumber = (tempOperand1Int << tempOperand2Int);
-                            }
-                            if (tempSymbol == SYMBOL_BITSHIFT_RIGHT_ASSIGN) {
-                                tempNumber = (tempOperand1Int >> tempOperand2Int);
-                            }
-                            if (tempType == VALUE_TYPE_NUMBER) {
-                                if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
-                                    *(float *)(((value_t *)(tempResult.destination))->data) = tempNumber;
-                                }
-                                if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
-                                    *(uint8_t *)(tempResult.destination) = tempNumber;
-                                }
-                            }
-                        }
-                    } else {
-                        if (tempSymbol != '=') {
-                            if (tempResult.value.type == VALUE_TYPE_MISSING) {
-                                reportError(ERROR_MESSAGE_MISSING_VALUE, tempStartCode);
-                                tempResult.status = EVALUATION_STATUS_QUIT;
-                                return tempResult;
-                            }
-                        }
-                        if (tempSymbol == '+') {
-                            if (tempResult.value.type == VALUE_TYPE_NUMBER) {
-                                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                *(float *)&(tempResult.value.data) += tempOperand2Float;
-                            } else if (tempResult.value.type == VALUE_TYPE_STRING) {
-                                if (tempResult2.value.type != VALUE_TYPE_STRING) {
-                                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                int8_t *tempPointer1 = *(int8_t **)(tempResult.value.data);
-                                int8_t *tempPointer2 = *(int8_t **)(tempResult2.value.data);
-                                int8_t *tempString1 = *(int8_t **)tempPointer1;
-                                int8_t *tempString2 = *(int8_t **)tempPointer2;
-                                int16_t tempLength1 = *(int16_t *)(tempString1 + STRING_LENGTH_OFFSET);
-                                int16_t tempLength2 = *(int16_t *)(tempString2 + STRING_LENGTH_OFFSET);
-                                int8_t *tempPointer3 = createEmptyString(tempLength1 + tempLength2);
-                                if (tempPointer3 == NULL) {
-                                    reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                int8_t *tempString3 = *(int8_t **)tempPointer3;
-                                memcpy(tempString3 + STRING_DATA_OFFSET, tempString1 + STRING_DATA_OFFSET, tempLength1);
-                                memcpy(tempString3 + STRING_DATA_OFFSET + tempLength1, tempString2 + STRING_DATA_OFFSET, tempLength2 + 1);
-                                *(int8_t **)&(tempResult.value.data) = tempPointer3;
-                            } else {
-                                reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                tempResult.status = EVALUATION_STATUS_QUIT;
-                                return tempResult;
-                            }
-                        } else if (tempSymbol == SYMBOL_EQUAL) {
-                            if (tempResult.value.type == VALUE_TYPE_NUMBER) {
-                                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                *(float *)&(tempResult.value.data) = (tempOperand1Float == tempOperand2Float);
-                            } else if (tempResult.value.type == VALUE_TYPE_STRING) {
-                                if (tempResult2.value.type != VALUE_TYPE_STRING) {
-                                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                int8_t *tempPointer1 = *(int8_t **)(tempResult.value.data);
-                                int8_t *tempPointer2 = *(int8_t **)(tempResult2.value.data);
-                                tempResult.value.type = VALUE_TYPE_NUMBER;
-                                *(float *)&(tempResult.value.data) = stringsAreEqual(tempPointer1, tempPointer2);
-                            } else {
-                                reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                tempResult.status = EVALUATION_STATUS_QUIT;
-                                return tempResult;
-                            }
-                        } else if (tempSymbol == SYMBOL_NOT_EQUAL) {
-                            if (tempResult.value.type == VALUE_TYPE_NUMBER) {
-                                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                *(float *)&(tempResult.value.data) = (tempOperand1Float != tempOperand2Float);
-                            } else if (tempResult.value.type == VALUE_TYPE_STRING) {
-                                if (tempResult2.value.type != VALUE_TYPE_STRING) {
-                                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                int8_t *tempPointer1 = *(int8_t **)(tempResult.value.data);
-                                int8_t *tempPointer2 = *(int8_t **)(tempResult2.value.data);
-                                tempResult.value.type = VALUE_TYPE_NUMBER;
-                                *(float *)&(tempResult.value.data) = !stringsAreEqual(tempPointer1, tempPointer2);
-                            } else {
-                                reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                tempResult.status = EVALUATION_STATUS_QUIT;
-                                return tempResult;
-                            }
-                        } else if (tempSymbol == '=') {
-                            if (tempResult.destination == NULL) {
-                                volatile int16_t tempCheatSize = VARIABLE_NAME_MAXIMUM_LENGTH + 1;
-                                uint8_t tempBuffer[tempCheatSize];
-                                int32_t tempCode = readStorageVariableName(tempBuffer, tempStartCode);
-                                if (tempCode < 0) {
-                                    errorCode = tempStartCode;
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                tempResult.destinationType = DESTINATION_TYPE_VALUE;
-                                value_t *tempValue = createVariable(tempBuffer);
-                                if (tempValue == NULL) {
-                                    reportError(ERROR_MESSAGE_STACK_HEAP_COLLISION, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                *(value_t **)&(tempResult.destination) = tempValue;
-                            }
-                            if (tempResult.destinationType == DESTINATION_TYPE_VALUE) {
-                                *(value_t *)(tempResult.destination) = tempResult2.value;
-                            }
-                            if (tempResult.destinationType == DESTINATION_TYPE_SYMBOL) {
-                                if (tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                                    reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                                    tempResult.status = EVALUATION_STATUS_QUIT;
-                                    return tempResult;
-                                }
-                                *(uint8_t *)(tempResult.destination) = *(float *)(tempResult2.value.data);
-                            }
-                        } else if (tempResult.value.type != VALUE_TYPE_NUMBER || tempResult2.value.type != VALUE_TYPE_NUMBER) {
-                            reportError(ERROR_MESSAGE_BAD_OPERAND_TYPE, tempStartCode);
-                            tempResult.status = EVALUATION_STATUS_QUIT;
-                            return tempResult;
-                        }
-                        if (tempSymbol == '-') {
-                            *(float *)&(tempResult.value.data) -= tempOperand2Float;
-                        }
-                        if (tempSymbol == '*') {
-                            *(float *)&(tempResult.value.data) *= tempOperand2Float;
-                        }
-                        if (tempSymbol == '/') {
-                            if (tempOperand2Float == 0.0) {
-                                reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, tempStartCode);
-                                tempResult.status = EVALUATION_STATUS_QUIT;
-                                return tempResult;
-                            }
-                            *(float *)&(tempResult.value.data) /= tempOperand2Float;
-                        }
-                        if (tempSymbol == '%') {
-                            if (tempOperand2Int == 0) {
-                                reportError(ERROR_MESSAGE_DIVIDE_BY_ZERO, tempStartCode);
-                                tempResult.status = EVALUATION_STATUS_QUIT;
-                                return tempResult;
-                            }
-                            *(float *)&(tempResult.value.data) = tempOperand1Int % tempOperand2Int;
-                        }
-                        if (tempSymbol == SYMBOL_BOOLEAN_AND) {
-                            *(float *)&(tempResult.value.data) = ((tempOperand1Float != 0.0) & (tempOperand2Float != 0.0));
-                        }
-                        if (tempSymbol == SYMBOL_BOOLEAN_OR) {
-                            *(float *)&(tempResult.value.data) = ((tempOperand1Float != 0.0) | (tempOperand2Float != 0.0));
-                        }
-                        if (tempSymbol == SYMBOL_BOOLEAN_XOR) {
-                            *(float *)&(tempResult.value.data) = ((tempOperand1Float != 0.0) ^ (tempOperand2Float != 0.0));
-                        }
-                        if (tempSymbol == '&') {
-                            *(float *)&(tempResult.value.data) = (tempOperand1Int & tempOperand2Int);
-                        }
-                        if (tempSymbol == '|') {
-                            *(float *)&(tempResult.value.data) = (tempOperand1Int | tempOperand2Int);
-                        }
-                        if (tempSymbol == '^') {
-                            *(float *)&(tempResult.value.data) = (tempOperand1Int ^ tempOperand2Int);
-                        }
-                        if (tempSymbol == SYMBOL_BITSHIFT_LEFT) {
-                            *(float *)&(tempResult.value.data) = (tempOperand1Int << tempOperand2Int);
-                        }
-                        if (tempSymbol == SYMBOL_BITSHIFT_RIGHT) {
-                            *(float *)&(tempResult.value.data) = (tempOperand1Int >> tempOperand2Int);
-                        }
-                        if (tempSymbol == '>') {
-                            *(float *)&(tempResult.value.data) = tempOperand1Float > tempOperand2Float;
-                        }
-                        if (tempSymbol == '<') {
-                            *(float *)&(tempResult.value.data) = tempOperand1Float < tempOperand2Float;
-                        }
-                        if (tempSymbol == SYMBOL_GREATER_OR_EQUAL) {
-                            *(float *)&(tempResult.value.data) = tempOperand1Float >= tempOperand2Float;
-                        }
-                        if (tempSymbol == SYMBOL_LESS_OR_EQUAL) {
-                            *(float *)&(tempResult.value.data) = tempOperand1Float <= tempOperand2Float;
-                        }
+                    evaluateBinaryOperatorExpression1(status, index, tempPrecedence);
+                    if (status->result.status != EVALUATION_STATUS_NORMAL) {
+                        return status->result;
                     }
                 } else {
                     break;
                 }
             }
-            firstTreasureTracker = &tempTreasureTracker;
+            firstTreasureTracker = &status->treasureTracker;
         }
     }
-    tempResult.nextCode = code;
-    return tempResult;
+    status->result.nextCode = status->code;
+    return status->result;
 }
 
 static expressionResult_t runCode(int32_t address) {

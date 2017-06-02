@@ -2713,7 +2713,7 @@ static void __attribute__ ((noinline)) evaluateInputOutputFunction(expressionSta
             errorCode = status->startCode;
             status->result.status = EVALUATION_STATUS_QUIT;
             return;
-        } else if (tempResult2 < MENU_RESULT_ESCAPE) {
+        } else if (tempResult2 == MENU_RESULT_ESCAPE) {
             status->result.status = EVALUATION_STATUS_QUIT;
             return;
         } else {

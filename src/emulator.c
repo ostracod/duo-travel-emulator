@@ -877,6 +877,10 @@ int8_t getKey() {
     }
 }
 
+int8_t escapeKeyIsPressed() {
+    return false;
+}
+
 void drawDisplayBuffer() {
     if (isTesting) {
         return;
@@ -4098,6 +4102,13 @@ static expressionResult_t runCode(int32_t address) {
         }
         if (allocationsSinceMarkAndSweep > 5 || commandsSinceMarkAndSweep > 30) {
             markAndSweep();
+        }
+        if (escapeKeyIsPressed()) {
+            expressionResult_t tempResult;
+            tempResult.destination = NULL;
+            tempResult.value.type = VALUE_TYPE_MISSING;
+            tempResult.status = EVALUATION_STATUS_QUIT;
+            return tempResult;
         }
     }
 }

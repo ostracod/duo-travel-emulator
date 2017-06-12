@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wno-pointer-sign -c
-LDFLAGS = -lncurses
+LDFLAGS = -lncurses -lm
 DIRBUILD = build
 DIRSRC = src
 SOURCES := $(shell ls $(DIRSRC)/*.c)

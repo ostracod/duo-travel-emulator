@@ -1103,6 +1103,9 @@ static int8_t *allocate(int16_t size, int8_t type) {
             tempAddress = tempPreviousAllocation - ALLOCATION_HEADER_SIZE;
         }
         if (tempNextAllocation == NULL) {
+            if (tempAddress - memory < size) {
+                return NULL;
+            }
             output = tempAddress - size;
             break;
         }

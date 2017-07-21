@@ -2513,6 +2513,7 @@ static void __attribute__ ((noinline)) evaluateControlFunction(expressionStatus_
         while (true) {
             if (status->branch->action == BRANCH_ACTION_LOOP) {
                 status->code = status->branch->address;
+                popBranch();
                 break;
             }
             int8_t tempSuccess = popBranch();

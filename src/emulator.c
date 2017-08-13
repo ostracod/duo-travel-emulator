@@ -475,7 +475,7 @@ const uint8_t SYMBOL_SET_NUMBERS[] PROGMEM = {
 
 const uint8_t SYMBOL_SET_PUNCTUATION[] PROGMEM = {
     ',', '\'', '\"', '\\', '[', ']', '(', ')', ' ', '.',
-    '?', '_', '@', '#', '{', '}'
+    '?', '_', '@', '#', '$', '{', '}'
 };
 
 const uint8_t SYMBOL_SET_OPERATORS[] PROGMEM = {
